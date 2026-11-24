@@ -3,17 +3,42 @@ const $=id=>document.getElementById(id);
 const KEY='requirement-studio:v1';
 let w=empty('Untitled workspace'), view='register', query='', typeFilter='', statusFilter='', editing=null, storageReady=true;
 function notice(t=''){ $('notice').textContent=t; }
-try {const raw=localStorage.getItem(KEY);if(raw) w=validateWorkspace(JSON.parse(raw));}
-catch(e){storageReady=false;notice('Could not read local data. Back up the workspace or recover the original data before replacing it. '+e.message);}
-function commit(next,{replace=false}={}) {
- validateWorkspace(next);
- if(!storageReady&&!replace) throw Error('Storage recovery required. Export your data first, then import a valid backup or create a new workspace.');
- localStorage.setItem(KEY,JSON.stringify(next));
- storageReady=true; w=next;
- $('project').value=w.name;
- render();
+let cloud=false, revision=0, busy=false;
+async function api(method='GET',body){
+ const response=await fetch('/api/workspace',{method,cache:'no-store',credentials:'same-origin',headers:body?{'Content-Type':'application/json','X-Workspace-Request':'1'}:{},body:body?JSON.stringify(body):undefined});
+ if(!response.ok){let message='Server request failed ('+response.status+').';try{message=(await response.json()).error||message;}catch{}throw Error(message);}
+ return response.json();
 }
-function run(fn){try{fn();}catch(e){notice(e.message);}}
+try {
+ const initial=await api();
+ if(initial.mode==='cloud'){
+  cloud=true;w=validateWorkspace(initial.workspace);revision=initial.revision;
+  document.querySelector('.sidefoot').textContent='Cloud workspace · Neon PostgreSQL';
+ } else if(initial.mode==='local'){
+  try{const raw=localStorage.getItem(KEY);if(raw)w=validateWorkspace(JSON.parse(raw));}
+  catch(e){storageReady=false;notice('Could not read local data. Recover your backup before replacing it. '+e.message);}
+ } else throw Error('Unknown storage mode.');
+}catch(e){
+ notice('Workspace could not load. Reload to retry. No changes were made. '+e.message);
+ document.querySelectorAll('button,input,select').forEach(el=>el.disabled=true);
+ throw e;
+}
+async function commit(next,{replace=false}={}) {
+ validateWorkspace(next);
+ if(busy)throw Error('A save is already in progress.');
+ if(!storageReady&&!replace) throw Error('Storage recovery required. Reload or import a valid backup.');
+ busy=true;
+ try{
+  if(cloud){
+   const result=await api('PUT',{workspace:next,revision});
+   revision=result.revision;
+  }else localStorage.setItem(KEY,JSON.stringify(next));
+  storageReady=true;w=next;
+  $('project').value=w.name;
+  render();
+ }finally{busy=false;}
+}
+async function run(fn){try{await fn();}catch(e){notice(e.message);}}
 function node(tag,text='',cls=''){const el=document.createElement(tag);if(text!=='')el.textContent=text;if(cls)el.className=cls;return el;}
 function button(label,action,cls=''){const b=node('button',label,cls);b.type='button';b.addEventListener('click',action);return b;}
 function select(values,selected=''){const s=node('select');for(const [value,label] of values){const o=node('option',label);o.value=value;o.selected=value===selected;s.append(o);}return s;}
@@ -71,6 +96,7 @@ function report(){
 function markdown(){const safe=s=>String(s).replace(/[\\`*_{}\[\]<>#|]/g,'\\$&');return '# '+safe(w.name)+' — Requirements specification\n\n'+w.items.filter(x=>x.status==='Approved').map(x=>'## '+x.id+' — '+safe(x.title)+'\n\n'+safe(x.description)+'\n\nOwner: '+safe(x.owner)+'  \nPriority: '+x.priority+'  \nVersion: '+x.version+'  \nSource: '+safe(x.sourceRef)+'  \nUpstream: '+x.parents.join(', ')+'  \nVerification: '+safe(x.verification)).join('\n\n');}
 function render(){({register,trace,quality,history,report}[view])();}
 function openEditor(id,type='FR'){
+ if(busy){notice('A save is in progress.');return;}
  editing=id?w.items.find(x=>x.id===id):newItem(w,type);if(!editing)return;
  const x=editing;const isExisting=!!id;
  $('record-id').textContent=x.id+' · '+TYPES[x.type]+' · v'+x.version;$('editor-title').textContent=isExisting?'Edit artifact':'New artifact';$('form-error').textContent='';
@@ -91,15 +117,15 @@ function openEditor(id,type='FR'){
  if(isExisting){const affected=descendants(w,x.id);fields.append(node('p',affected.length+' downstream artifact(s) may be affected. Saving changes returns approved descendants to In review.','muted wide'));}
  $('form-fields').replaceChildren(fields);$('editor').showModal();
 }
-$('form').addEventListener('submit',e=>{e.preventDefault();const d=new FormData(e.target);const x={...editing};for(const key of ['title','description','owner','priority','source','sourceRef','verification','status'])x[key]=String(d.get(key)||'').trim();x.parents=d.getAll('parents');try{commit(saveItem(w,x));$('editor').close();notice(x.id+' saved.');}catch(err){$('form-error').textContent=err.message;}});
+$('form').addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(e.target);const x={...editing};for(const key of ['title','description','owner','priority','source','sourceRef','verification','status'])x[key]=String(d.get(key)||'').trim();x.parents=d.getAll('parents');try{await commit(saveItem(w,x));$('editor').close();notice(x.id+' saved.');}catch(err){$('form-error').textContent=err.message;}});
 for(const id of ['close','cancel'])$(id).addEventListener('click',()=>$('editor').close());
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(y=>y.removeAttribute('aria-current'));b.setAttribute('aria-current','page');render();}));
 $('project').value=w.name;
-$('project').addEventListener('change',()=>run(()=>{const name=$('project').value.trim();if(!name)throw Error('Workspace name cannot be empty.');commit({...w,name});notice('Workspace renamed.');}));
-$('sample').addEventListener('click',()=>run(()=>{if(!confirm('Replace this workspace with synthetic sample data? Export a backup first if needed.'))return;commit(demo(),{replace:true});notice('Synthetic sample loaded. This is not real stakeholder evidence.');}));
-$('reset').addEventListener('click',()=>run(()=>{if(!confirm('Replace this workspace with an empty workspace? Back up your current data first.'))return;commit(empty('Untitled workspace'),{replace:true});notice('New workspace created.');}));
-$('backup').addEventListener('click',()=>run(()=>{const raw=storageReady?JSON.stringify(w,null,2):localStorage.getItem(KEY);download('requirement-studio-backup.json',raw||JSON.stringify(w,null,2),'application/json');}));
+$('project').addEventListener('change',()=>run(async()=>{const name=$('project').value.trim();if(!name)throw Error('Workspace name cannot be empty.');await commit({...w,name});notice('Workspace renamed.');}));
+$('sample').addEventListener('click',()=>run(async()=>{if(!confirm('Replace this workspace with synthetic sample data? Export a backup first if needed.'))return;await commit(demo(),{replace:true});notice('Synthetic sample loaded. This is not real stakeholder evidence.');}));
+$('reset').addEventListener('click',()=>run(async()=>{if(!confirm('Replace this workspace with an empty workspace? Back up your current data first.'))return;await commit(empty('Untitled workspace'),{replace:true});notice('New workspace created.');}));
+$('backup').addEventListener('click',()=>run(async()=>{const raw=storageReady?JSON.stringify(w,null,2):localStorage.getItem(KEY);download('requirement-studio-backup.json',raw||JSON.stringify(w,null,2),'application/json');}));
 $('import').addEventListener('click',()=>$('file').click());
-$('file').addEventListener('change',async()=>{const f=$('file').files[0];$('file').value='';if(!f)return;try{if(f.size>10*1024*1024)throw Error('Backup exceeds 10 MB.');const next=validateWorkspace(JSON.parse(await f.text()));if(!confirm('Replace this workspace with '+next.name+'?'))return;commit(next,{replace:true});notice('Backup imported.');}catch(e){notice('Import failed: '+e.message);}});
-window.addEventListener('storage',e=>{if(e.key===KEY){storageReady=false;notice('This workspace changed in another tab. Reload before making changes to avoid overwriting data.');}});
+$('file').addEventListener('change',async()=>{const f=$('file').files[0];$('file').value='';if(!f)return;try{if(f.size>10*1024*1024)throw Error('Backup exceeds 10 MB.');const next=validateWorkspace(JSON.parse(await f.text()));if(!confirm('Replace this workspace with '+next.name+'?'))return;await commit(next,{replace:true});notice('Backup imported.');}catch(e){notice('Import failed: '+e.message);}});
+window.addEventListener('storage',e=>{if(!cloud&&e.key===KEY){storageReady=false;notice('This workspace changed in another tab. Reload before making changes to avoid overwriting data.');}});
 render();

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: requirement-studio
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_USERNAME
+        value: owner
+      - key: APP_PASSWORD
+        sync: false

@@ -1,0 +1,28 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {buildServer} from '../server.mjs';
+import {authorize,allowedWrite,validateSave} from '../src/cloud.mjs';
+import {empty,demo} from '../src/core.mjs';
+const origin='https://example.test', user='owner', password='test-only-long-password-12345';
+const auth='Basic '+Buffer.from(user+':'+password).toString('base64');
+test('auth rejects absent or wrong credentials',()=>{assert.equal(authorize(undefined,user,password),false);assert.equal(authorize('Basic d3Jvbmc=',user,password),false);assert.equal(authorize(auth,user,password),true);});
+test('write requires exact origin and JSON custom header',()=>{const h={origin,'x-workspace-request':'1','content-type':'application/json'};assert.equal(allowedWrite(h,origin),true);assert.equal(allowedWrite({...h,origin:'https://evil.test'},origin),false);assert.equal(allowedWrite({...h,'x-workspace-request':undefined},origin),false);});
+test('cloud validates workspace approval and revision',()=>{const w=demo();assert.equal(validateSave({revision:0,workspace:w}),w);w.items[0].owner='';assert.throws(()=>validateSave({revision:0,workspace:w}),/approval|Approved/);assert.throws(()=>validateSave({revision:-1,workspace:empty('A')}),/revision/);});
+test('HTTP cloud auth, persistence contract and conflicts',async t=>{
+ let doc=empty('A'),rev=0;
+ const store={read:async()=>({workspace:doc,revision:rev}),write:async(r,w)=>{if(r!==rev)return null;doc=w;return ++rev;},health:async()=>{}};
+ const server=buildServer({store,user,password,origin});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ t.after(()=>{server.closeAllConnections();return new Promise(resolve=>server.close(resolve));});
+ const base='http://127.0.0.1:'+server.address().port;
+ assert.equal((await fetch(base+'/healthz')).status,200);
+ assert.equal((await fetch(base+'/api/workspace')).status,401);
+ assert.equal((await fetch(base+'/')).status,401);
+ const get=()=>fetch(base+'/api/workspace',{headers:{Authorization:auth}});
+ assert.equal((await (await get()).json()).revision,0);
+ const put=(r,source=origin)=>fetch(base+'/api/workspace',{method:'PUT',headers:{Authorization:auth,Origin:source,'X-Workspace-Request':'1','Content-Type':'application/json'},body:JSON.stringify({workspace:empty('B'),revision:r})});
+ assert.equal((await put(0,'https://evil.test')).status,403);
+ assert.equal((await put(0)).status,200);
+ assert.equal((await (await get()).json()).workspace.name,'B');
+ assert.equal((await put(0)).status,409);
+});
