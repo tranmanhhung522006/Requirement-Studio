@@ -1,3 +1,4 @@
+import {rice,ice,reviewSuggestions,uatSummary} from './analysis-tools.mjs';
 import {diagramView} from './diagram-ui.mjs';
 import {t,setLanguage,language,translateStatic,qualityMessage} from './i18n.mjs';
 import {professionalView,structuredFields} from './professional.mjs';
@@ -97,7 +98,7 @@ function report(){
  const active=w.items.filter(x=>x.status!=='Retired'), blockers=active.filter(x=>x.status!=='Approved'||inspect(w,x).some(i=>i.level==='error'));
  const tools=node('div','','toolbar no-print');const print=button('Print / Save PDF',()=>window.print(),'primary');const final=button('Export approved Markdown',()=>download('specification.md',markdown(),'text/markdown;charset=utf-8'));
  print.disabled=final.disabled=Boolean(blockers.length)||!active.length;
- const word=button('Export DOCX',()=>run(async()=>exportDocument(w,'docx',language())));const excel=button('Export XLSX',()=>run(async()=>exportDocument(w,'xlsx',language())));word.disabled=print.disabled;tools.append(print,final,word,excel);c.append(tools);
+ const template=select([['BRD','BRD'],['FRD','FRD'],['SRS','SRS']],'SRS');template.setAttribute('aria-label','Document template');const word=button('Export DOCX',()=>run(async()=>exportDocument(w,'docx',language(),template.value)));const excel=button('Export XLSX',()=>run(async()=>exportDocument(w,'xlsx',language())));word.disabled=!active.length;tools.append(print,final,template,word,excel);c.append(tools);
  if(blockers.length)c.append(node('p',blockers.length+' '+t('active artifact(s) need approval or correction before final export. Preview below is not final.'),'warning no-print'));
  const doc=node('div','','document');doc.append(node('h2',w.name+' — '+t('Requirements specification')),node('p',t(blockers.length?'DRAFT — Not approved for final export':'Approved artifact register')));
  for(const [type,label] of Object.entries(TYPES)){const arr=active.filter(x=>x.type===type);if(!arr.length)continue;doc.append(node('h3',t(label)));for(const x of arr){const art=node('article');art.append(node('h3',x.id+' — '+x.title),node('p',x.description),node('p',t('Owner')+': '+x.owner+' | Priority: '+x.priority+' | Status: '+x.status+' | v'+x.version),node('p',t('Source')+': '+x.source+' — '+x.sourceRef),node('p',t('Upstream')+': '+(x.parents.join(', ')||'—')),node('p',t('Verification')+': '+(x.verification||'—')));doc.append(art);}}
@@ -106,7 +107,7 @@ function report(){
 function markdown(){const safe=s=>String(s).replace(/[\\`*_{}\[\]<>#|]/g,'\\$&');return '# '+safe(w.name)+' — Requirements specification\n\n'+w.items.filter(x=>x.status==='Approved').map(x=>'## '+x.id+' — '+safe(x.title)+'\n\n'+safe(x.description)+'\n\nOwner: '+safe(x.owner)+'  \nPriority: '+x.priority+'  \nVersion: '+x.version+'  \nSource: '+safe(x.sourceRef)+'  \nUpstream: '+x.parents.join(', ')+'  \nVerification: '+safe(x.verification)).join('\n\n');}
 function render(){
  translateStatic(cloud);$('logout').textContent=t('Sign out');
- const handlers={register,trace,quality,history,report};
+ const handlers={register,trace,quality,history,report,analysis:analysisView};
  if(handlers[view])handlers[view]();
  else if(view==='diagrams')diagramView(w,{heading,node,table,button,select,projectId,commit:async op=>{try{await commit(governance(w,op),{operation:op});notice('Saved.');return true;}catch(e){notice(e.message);return false;}}});
  else professionalView(view,w,{heading,node,table,button,select,refs,ref,commit:async op=>run(async()=>{await commit(governance(w,op),{operation:op});notice(t('Saved.'));})});
@@ -173,3 +174,12 @@ $('import').addEventListener('click',()=>$('file').click());
 $('file').addEventListener('change',async()=>{const f=$('file').files[0];$('file').value='';if(!f)return;try{if(f.size>10*1024*1024)throw Error('Backup exceeds 10 MB.');const next=validateWorkspace(JSON.parse(await f.text()));if(!confirm('Replace this workspace with '+next.name+'?'))return;await commit(next,{replace:true});notice('Backup imported.');}catch(e){notice('Import failed: '+e.message);}});
 window.addEventListener('storage',e=>{if(!cloud&&(e.key===localKey()||e.key===PROJECTS)){storageReady=false;notice('This workspace changed in another tab. Reload before making changes to avoid overwriting data.');}});
 render();
+
+function analysisView(){
+ const c=heading('Product analysis','Deterministic prioritization and evidence-based review.');
+ const make=(label,value)=>{const l=node('label','','field'),i=node('input');i.type='number';i.value=value;l.append(node('span',t(label)),i);return [l,i];};
+ const box=node('section','','document'),out=node('p'),a=make('Reach',100),b=make('Impact',2),d=make('Confidence (%)',80),e=make('Effort',4);box.append(node('h2','RICE'),a[0],b[0],d[0],e[0],button('Calculate',()=>run(async()=>{out.textContent='RICE: '+rice({reach:Number(a[1].value),impact:Number(b[1].value),confidence:Number(d[1].value),effort:Number(e[1].value)}).toFixed(2);})),out);c.append(box);
+ const ib=node('section','','document'),io=node('p'),ia=make('Impact',5),ic=make('Confidence',5),ie=make('Ease',5);ib.append(node('h2','ICE'),ia[0],ic[0],ie[0],button('Calculate',()=>run(async()=>{io.textContent='ICE: '+ice({impact:Number(ia[1].value),confidence:Number(ic[1].value),ease:Number(ie[1].value)}).toFixed(2);})),io);c.append(ib);
+ const u=uatSummary(w);c.append(node('h2',t('Test readiness')),node('p',u.passed+' / '+u.total+' '+t('Passed current tests')),table(['ID','Title','Version','Result'],u.rows.map(r=>[ref(r.id),r.title,r.version,t(r.result)])));
+ c.append(node('h2',t('Review suggestions')),table(['Artifact','Rule','Finding'],reviewSuggestions(w).map(r=>[ref(r.artifact),r.code,qualityMessage(r)])));
+}
