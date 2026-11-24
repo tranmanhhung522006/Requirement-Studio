@@ -41,7 +41,7 @@ async function commit(next,{replace=false,operation=null}={}) {
    const result=await api('PUT',operation?{operation,revision}:{workspace:next,revision});
    revision=result.revision;next=upgrade(result.workspace);
   }else localStorage.setItem(localKey(),JSON.stringify(next));
-  storageReady=true;w=upgrade(next);projects=projects.map(p=>p.id===projectId?{...p,name:w.name}:p);if(!cloud)localStorage.setItem(PROJECTS,JSON.stringify(projects));refreshProjects();
+  storageReady=true;w=upgrade(next);projects=projects.map(p=>p.id===projectId?{...p,name:w.name}:p);if(!cloud){try{localStorage.setItem(PROJECTS,JSON.stringify(projects));}catch{notice('Project saved; project list metadata could not be updated.');}}refreshProjects();
   $('project').value=w.name;
   render();
  }finally{busy=false;}
@@ -113,6 +113,7 @@ function refreshProjects(){
 }
 async function switchProject(id){
  if(busy)throw Error('A save is in progress.');
+ if($('editor').open)throw Error('Close the editor before switching projects.');
  busy=true;
  try{
   let next,rev=0;

@@ -1,6 +1,6 @@
 # Requirement Studio
 
-A local-first personal requirements workspace for business analysts, product owners and project managers. Version 0.2.0 adds an optional private cloud mode to the MVP with deterministic validation rather than generated diagrams or AI content.
+A local-first personal requirements workspace for business analysts, product owners and project managers. Version 0.3.0 adds multiple projects, structured editors, change control and bilingual UI to the private cloud MVP with deterministic validation rather than generated diagrams or AI content.
 
 ## Run
 
@@ -28,8 +28,8 @@ Open http://127.0.0.1:4173. Local mode requires no npm install, external API, da
 - Allowed upstream artifact types are an internal convention, not a mandated BABOK or ISO taxonomy.
 - Source references and approvals are manual attestations, not verified stakeholder identity. History is editable via backups, not a tamper-proof enterprise audit log.
 - Coverage only checks whether an approved acceptance criterion and approved test case exist downstream; it does not demonstrate test execution or completeness.
-- Local storage is browser/profile/origin-specific, not encrypted or synced. Cloud mode uses one PostgreSQL-backed workspace shared across authorized devices. Back up before switching devices or clearing data. Use authorized non-sensitive data; do not use on shared devices for confidential work.
-- This release has one active workspace; use JSON backups to switch projects. Diagram generation, DOCX export, Jira integration, team access and AI-assisted analysis are out of scope.
+- Local storage is browser/profile/origin-specific, not encrypted or synced. Cloud mode uses separate PostgreSQL-backed project snapshots shared across authorized devices. Back up before switching devices or clearing data. Use authorized non-sensitive data; do not use on shared devices for confidential work.
+- This release supports multiple projects with independent workspaces; JSON backups apply to the selected project. Basic DOCX specification and XLSX RTM are supported; diagram generation, specialized document templates, Jira integration, team access and AI-assisted analysis remain out of scope.
 
 ## Repository layout
 
@@ -50,9 +50,11 @@ Reference reading (not a claim of compliance): [IIBA Business Analysis Standard]
 1. Create a dedicated Neon project/database and choose a nearby region. In Neon **Connect**, copy the pooled PostgreSQL connection string.
 2. Merge the PR, open Render Dashboard, create a **Blueprint** from this repository and select the main branch. The included render.yaml creates a free Node web service in Singapore.
 3. Fill DATABASE_URL with the Neon connection string and APP_PASSWORD with a unique, random password of at least 24 characters. APP_USERNAME defaults to owner. Never commit these values or include them in screenshots. Render supplies RENDER_EXTERNAL_URL; for a custom domain set APP_ORIGIN to its HTTPS origin.
-4. Deploy. The server creates requirement_studio_workspace on first startup. Open the actual Render URL and enter the configured credentials in the browser prompt.
+4. Deploy. The server creates the legacy workspace and rs_projects / rs_project_events tables on first startup, and migrates the old workspace to the default project if necessary. Open the actual Render URL and enter the configured credentials in the browser prompt.
 5. Verify /healthz, save a synthetic record, reload in another authorized browser and confirm persistence. Import a JSON backup from local mode if desired.
 
 Manual Render Web Service settings: Node runtime; build command npm install --omit=dev; start command npm start; health check /healthz; NODE_VERSION=22; NODE_ENV=production; DATABASE_URL, APP_PASSWORD, APP_USERNAME. Render supplies PORT. Cloud configuration errors stop startup instead of falling back to unauthenticated local mode.
 
-Cloud security and scope: single owner using HTTP Basic over Render HTTPS, no public registration, same-origin JSON writes, server-side validation, optimistic revision check and TLS certificate verification for PostgreSQL. The JSONB workspace is a snapshot, not a normalized multi-tenant schema or tamper-proof audit. No cloud fallback to localStorage. Browser Basic credentials may remain cached until the browser session closes. Use dedicated strong credentials and authorized data; enterprise authentication, rate limits, independent audit and multi-project support remain future work. Free hosting may cold-start. Database and hosted app must be tested in the target environment before using real data.
+Cloud security and scope: single owner using HTTP Basic over Render HTTPS, no public registration, same-origin JSON writes, server-side validation, optimistic revision check and TLS certificate verification for PostgreSQL. The JSONB workspace is a snapshot, not a normalized multi-tenant schema or tamper-proof audit. No cloud fallback to localStorage. Browser Basic credentials may remain cached until the browser session closes. Use dedicated strong credentials and authorized data; enterprise authentication, rate limits, independent audit and normalized artifact tables remain future work. Free hosting may cold-start. Database and hosted app must be tested in the target environment before using real data.
+
+See [Professional Foundation notes](docs/PROFESSIONAL.md) for v0.3 details and limitations.

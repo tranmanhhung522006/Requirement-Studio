@@ -48,7 +48,7 @@ export function applyOperation(current,op){
  if(!op||typeof op.kind!=='string')throw Error('Invalid operation.');
  if(op.kind==='save'){
   const old=current.items.find(x=>x.id===op.record?.id);
-  if(old?.status==='Approved'&&!(current.changes??[]).some(c=>c.target===old.id&&c.version===old.version&&c.status==='Implemented'))throw Error('Use an accepted change request to reopen an approved artifact.');
+  if(old?.status==='Approved')throw Error('Use an accepted change request to reopen an approved artifact.');
   return saveItem(current,op.record);
  }
  if(op.kind==='rename'){

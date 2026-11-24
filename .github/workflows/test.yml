@@ -10,4 +10,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: node --check src/app.mjs && node --check src/professional.mjs && node --check src/i18n.mjs && node --check src/export.mjs
       - run: npm test

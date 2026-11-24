@@ -7,7 +7,7 @@ const origin='https://example.test', user='owner', password='test-only-long-pass
 const auth='Basic '+Buffer.from(user+':'+password).toString('base64');
 test('auth rejects absent or wrong credentials',()=>{assert.equal(authorize(undefined,user,password),false);assert.equal(authorize('Basic d3Jvbmc=',user,password),false);assert.equal(authorize(auth,user,password),true);});
 test('write requires exact origin and JSON custom header',()=>{const h={origin,'x-workspace-request':'1','content-type':'application/json'};assert.equal(allowedWrite(h,origin),true);assert.equal(allowedWrite({...h,origin:'https://evil.test'},origin),false);assert.equal(allowedWrite({...h,'x-workspace-request':undefined},origin),false);});
-test('cloud validates workspace approval and revision',()=>{const w=demo();assert.equal(validateSave({revision:0,workspace:w}),w);w.items[0].owner='';assert.throws(()=>validateSave({revision:0,workspace:w}),/approval|Approved/);assert.throws(()=>validateSave({revision:-1,workspace:empty('A')}),/revision/);});
+test('cloud validates workspace approval and revision',()=>{const w=demo();assert.deepEqual(validateSave({revision:0,workspace:w}),w);w.items[0].owner='';assert.throws(()=>validateSave({revision:0,workspace:w}),/approval|Approved/);assert.throws(()=>validateSave({revision:-1,workspace:empty('A')}),/revision/);});
 test('HTTP cloud auth, persistence contract and conflicts',async t=>{
  let doc=empty('A'),rev=0;
  const store={read:async()=>({workspace:doc,revision:rev}),write:async(r,w)=>{if(r!==rev)return null;doc=w;return ++rev;},health:async()=>{}};
