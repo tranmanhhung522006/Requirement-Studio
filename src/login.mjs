@@ -1,0 +1,5 @@
+const $=id=>document.getElementById(id);let lang='en';try{lang=localStorage.getItem('rs-language')||'en';}catch{}
+function tr(en,vi){return lang==='vi'?vi:en;}
+function render(){document.documentElement.lang=lang;$('language').value=lang;$('user-label').textContent=tr('Username','Tên đăng nhập');$('password-label').textContent=tr('Password','Mật khẩu');$('submit').textContent=tr('Sign in','Đăng nhập');}
+$('language').addEventListener('change',()=>{lang=$('language').value;try{localStorage.setItem('rs-language',lang);}catch{}render();});
+$('login').addEventListener('submit',async e=>{e.preventDefault();$('submit').disabled=true;$('error').textContent='';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Request':'1'},body:JSON.stringify({username:$('user').value,password:$('password').value})});if(r.ok){$('password').value='';location.replace('/');return;}throw Error(r.status===429?tr('Too many attempts; retry later.','Quá nhiều lần thử; hãy thử lại sau.'):tr('Sign-in failed.','Đăng nhập thất bại.'));}catch(err){$('error').textContent=err.message;}finally{$('submit').disabled=false;}});render();

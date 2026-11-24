@@ -15,13 +15,14 @@ function readLocalProjects(){return JSON.parse(localStorage.getItem(PROJECTS)||'
 
 async function api(method='GET',body,path=projectUrl()){
  const response=await fetch(path,{method,cache:'no-store',credentials:'same-origin',headers:body?{'Content-Type':'application/json','X-Workspace-Request':'1'}:{},body:body?JSON.stringify(body):undefined});
+ if(response.status===401&&cloud){location.assign('/login.html');throw Error('Session expired.');}
  if(!response.ok){let message='Server request failed ('+response.status+').';try{message=(await response.json()).error||message;}catch{}throw Error(message);}
  return response.json();
 }
 try {
  const initial=await api();
  if(initial.mode==='cloud'){
-  cloud=true;w=upgrade(validateWorkspace(initial.workspace));revision=initial.revision;projects=(await api('GET',undefined,'/api/projects')).projects;
+  cloud=true;$('logout').hidden=false;w=upgrade(validateWorkspace(initial.workspace));revision=initial.revision;projects=(await api('GET',undefined,'/api/projects')).projects;
   document.querySelector('.sidefoot').textContent='Cloud workspace · Neon PostgreSQL';
  } else if(initial.mode==='local'){
   try{const raw=localStorage.getItem(KEY);if(raw)w=upgrade(validateWorkspace(JSON.parse(raw)));projects=readLocalProjects();projects=projects.map(p=>p.id==='default'?{...p,name:w.name}:p);}
@@ -104,7 +105,7 @@ function report(){
 }
 function markdown(){const safe=s=>String(s).replace(/[\\`*_{}\[\]<>#|]/g,'\\$&');return '# '+safe(w.name)+' — Requirements specification\n\n'+w.items.filter(x=>x.status==='Approved').map(x=>'## '+x.id+' — '+safe(x.title)+'\n\n'+safe(x.description)+'\n\nOwner: '+safe(x.owner)+'  \nPriority: '+x.priority+'  \nVersion: '+x.version+'  \nSource: '+safe(x.sourceRef)+'  \nUpstream: '+x.parents.join(', ')+'  \nVerification: '+safe(x.verification)).join('\n\n');}
 function render(){
- translateStatic(cloud);
+ translateStatic(cloud);$('logout').textContent=t('Sign out');
  const handlers={register,trace,quality,history,report};
  if(handlers[view])handlers[view]();
  else if(view==='diagrams')diagramView(w,{heading,node,table,button,select,projectId,commit:async op=>{try{await commit(governance(w,op),{operation:op});notice('Saved.');return true;}catch(e){notice(e.message);return false;}}});
@@ -136,6 +137,7 @@ $('new-project').addEventListener('click',()=>run(async()=>{
 $('language').value=language();
 $('language').addEventListener('change',()=>{setLanguage($('language').value);render();});
 refreshProjects();
+$('logout').addEventListener('click',()=>run(async()=>{await api('POST',{},'/api/logout');location.assign('/login.html');}));
 
 function openEditor(id,type='FR'){
  if(busy){notice('A save is in progress.');return;}

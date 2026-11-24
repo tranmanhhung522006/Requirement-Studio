@@ -1,3 +1,4 @@
+import {createSessions} from './src/session.mjs';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
@@ -5,11 +6,11 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {authorize,allowedWrite,validateSave,createStore,applyOperation} from './src/cloud.mjs';
 const root=new URL('.',import.meta.url);
-const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/i18n.mjs':'src/i18n.mjs','/src/professional.mjs':'src/professional.mjs','/src/export.mjs':'src/export.mjs','/src/diagram.mjs':'src/diagram.mjs','/src/diagram-ui.mjs':'src/diagram-ui.mjs','/src/styles.css':'src/styles.css'};
+const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/i18n.mjs':'src/i18n.mjs','/src/professional.mjs':'src/professional.mjs','/src/export.mjs':'src/export.mjs','/src/diagram.mjs':'src/diagram.mjs','/src/diagram-ui.mjs':'src/diagram-ui.mjs','/src/styles.css':'src/styles.css','/login.html':'login.html','/src/login.mjs':'src/login.mjs'};
 const mime={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 const MAX=10*1024*1024;
-export function buildServer({store=null,user='',password='',origin=''}={}){
- const failures=new Map();
+export function buildServer({store=null,user='',password='',origin='',sessionMode=false}={}){
+ const failures=new Map(),sessions=sessionMode?createSessions(user,password):null;
  return createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost'),path=url.pathname,project=url.searchParams.get('project')||'default';
   const headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"};
@@ -20,7 +21,26 @@ export function buildServer({store=null,user='',password='',origin=''}={}){
     if(store)await store.health();
     return json(200,{ok:true});
    }
-   if(store){
+   if(store&&sessions){
+    if(path==='/login.html'||path==='/src/login.mjs'||path==='/src/styles.css'){
+     if(req.method!=='GET'&&req.method!=='HEAD')return json(405,{error:'Method not allowed.'});
+     const data=await readFile(new URL(files[path],root));res.writeHead(200,{...headers,'Content-Type':mime[files[path].split('.').pop()]});return res.end(req.method==='HEAD'?undefined:data);
+    }
+    if(path==='/api/login'||path==='/api/logout'){
+     if(req.method!=='POST'||!allowedWrite(req.headers,origin))return json(403,{error:'Invalid request origin or content type.'});
+     if(path==='/api/logout'){sessions.revoke(req.headers.cookie);return json(200,{ok:true},{'Set-Cookie':sessions.clearCookie});}
+     let n=0,parts=[];for await(const chunk of req){n+=chunk.length;if(n>4096){res.destroy();return;}parts.push(chunk);}
+     let body;try{body=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{return json(400,{error:'Invalid login request.'});}
+     const outcome=await sessions.login(body?.username,body?.password);
+     if(outcome.status!==200)return json(outcome.status,{error:outcome.status===429?'Too many authentication attempts. Retry later.':'Invalid credentials.'});
+     return json(200,{ok:true},{'Set-Cookie':outcome.cookie});
+    }
+    if(!sessions.valid(req.headers.cookie)){
+     if(path==='/'||path==='/index.html'){res.writeHead(303,{...headers,Location:'/login.html'});return res.end();}
+     return json(401,{error:'Authentication required.'});
+    }
+   }
+   if(store&&!sessions){
     const ip=req.socket.remoteAddress||'unknown',now=Date.now();
     // Bounded global fallback because reverse proxy addresses may be shared.
     for(const [key,v] of failures)if(v.until<=now)failures.delete(key);
@@ -81,7 +101,7 @@ export async function start(){
   if(u.protocol!=='https:')throw Error('Cloud mode requires an HTTPS origin.');
   origin=u.origin;store=await createStore(process.env.DATABASE_URL);
  }
- const server=buildServer({store,user,password,origin});
+ const server=buildServer({store,user,password,origin,sessionMode:cloud});
  const port=Number(process.env.PORT||4173);
  server.listen(port,cloud?'0.0.0.0':'127.0.0.1',()=>console.log('Requirement Studio listening on port '+port+' ('+(cloud?'cloud':'local')+')'));
  for(const sig of ['SIGINT','SIGTERM'])process.once(sig,()=>{server.close(async()=>{if(store)await store.close();process.exit(0);});});
