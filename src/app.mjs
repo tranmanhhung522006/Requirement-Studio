@@ -1,3 +1,4 @@
+import {diagramView} from './diagram-ui.mjs';
 import {t,setLanguage,language,translateStatic,qualityMessage} from './i18n.mjs';
 import {professionalView,structuredFields} from './professional.mjs';
 import {exportDocument} from './export.mjs';
@@ -64,26 +65,26 @@ function register(){
  const active=w.items.filter(x=>x.status!=='Retired'),m=matrix(w),q=issues(w);
  const metrics=node('div','','metrics');
  for(const [n,v] of [['Active artifacts',active.length],['Approved',active.filter(x=>x.status==='Approved').length],['Quality errors',q.filter(x=>x.level==='error').length],['Approved AC & TC linked',m.length?Math.round(m.filter(x=>x.covered).length/m.length*100)+'%':'—']]){const d=node('div','','metric');d.append(node('strong',String(v)),node('span',t(n)));metrics.append(d);}c.append(metrics);
- const bar=node('div','','toolbar no-print'), search=node('input');search.type='search';search.placeholder=t('Search ID, title, description or owner');search.setAttribute('aria-label','Search requirements');search.value=query;
- const types=select([['','All types'],...Object.entries(TYPES)],typeFilter);types.setAttribute('aria-label','Filter type');
- const states=select([['','All statuses'],...pairs(STATUS)],statusFilter);states.setAttribute('aria-label','Filter status');
- const create=select(Object.entries(TYPES),'FR');create.setAttribute('aria-label','New artifact type');
+ const bar=node('div','','toolbar no-print'), search=node('input');search.type='search';search.placeholder=t('Search ID, title, description or owner');search.setAttribute('aria-label',t('Search requirements'));search.value=query;
+ const types=select([['','All types'],...Object.entries(TYPES)],typeFilter);types.setAttribute('aria-label',t('Filter type'));
+ const states=select([['','All statuses'],...pairs(STATUS)],statusFilter);states.setAttribute('aria-label',t('Filter status'));
+ const create=select(Object.entries(TYPES),'FR');create.setAttribute('aria-label',t('New artifact type'));
  bar.append(search,types,states,button('Export CSV',exportRegister),create,button('New artifact',()=>openEditor(null,create.value),'primary'));c.append(bar);
  const area=node('div');c.append(area);
  function update(){const items=w.items.filter(x=>(!typeFilter||x.type===typeFilter)&&(!statusFilter||x.status===statusFilter)&&[x.id,x.title,x.description,x.owner].join(' ').toLowerCase().includes(query.toLowerCase()));
- area.replaceChildren(node('small',items.length+' of '+w.items.length+' artifacts'),table(['ID','Title','Priority','Status','Owner','Version','Upstream'],items.map(x=>[ref(x.id),x.title||t('Untitled'),t(x.priority),status(x),x.owner||'—','v'+x.version,refs(x.parents)]),'No matching artifacts.'));}
+ area.replaceChildren(node('small',items.length+' / '+w.items.length+' '+t('artifacts')),table(['ID','Title','Priority','Status','Owner','Version','Upstream'],items.map(x=>[ref(x.id),x.title||t('Untitled'),t(x.priority),status(x),x.owner||'—','v'+x.version,refs(x.parents)]),'No matching artifacts.'));}
  search.addEventListener('input',()=>{query=search.value;update();});types.addEventListener('change',()=>{typeFilter=types.value;update();});states.addEventListener('change',()=>{statusFilter=states.value;update();});update();
 }
 function trace(){
  const c=heading('Traceability matrix','Inspect downstream coverage and follow links to the source artifacts.');
  const bar=node('div','','toolbar no-print');bar.append(button('Export RTM CSV',exportMatrix));c.append(bar);
  const rows=matrix(w);c.append(table(['Requirement','Title','Upstream','User stories','Acceptance criteria','Test cases','Approved AC & TC linked','Passed current tests'],rows.map(x=>[ref(x.id),x.title,refs(x.upstream),refs(x.stories),refs(x.criteria),refs(x.tests),t(x.covered?'Yes':'Gap'),refs(x.passed)])));
- c.append(node('p','Coverage indicates the existence of at least one approved acceptance criterion and one approved test case downstream. It does not indicate test execution, complete coverage or UAT success.','muted'));
+ c.append(node('p',t('Coverage requires an approved acceptance criterion linked to an approved test case. Passed tests are version-specific; this is not complete coverage or UAT success.'),'muted'));
 }
 function quality(){
  const c=heading('Quality review','Deterministic checks for completeness, source evidence, traceability and potentially ambiguous wording.');
  const all=issues(w);c.append(table(['Artifact','Rule','Severity','Finding'],all.map(x=>[ref(x.id),x.code,node('span',t(x.level),x.level),qualityMessage(x)]),'No findings in the current register.'));
- c.append(node('p','Errors block approval. Warnings require analyst judgment. These local rules are not a certification of compliance or a substitute for stakeholder review.','muted'));
+ c.append(node('p',t('Errors block approval. Warnings require analyst judgment. These local rules are not a certification of compliance or a substitute for stakeholder review.'),'muted'));
 }
 function history(){
  const c=heading('Version history','Review recorded snapshots and changes, including automatic downstream review resets.');
@@ -96,9 +97,9 @@ function report(){
  const tools=node('div','','toolbar no-print');const print=button('Print / Save PDF',()=>window.print(),'primary');const final=button('Export approved Markdown',()=>download('specification.md',markdown(),'text/markdown;charset=utf-8'));
  print.disabled=final.disabled=Boolean(blockers.length)||!active.length;
  const word=button('Export DOCX',()=>run(async()=>exportDocument(w,'docx',language())));const excel=button('Export XLSX',()=>run(async()=>exportDocument(w,'xlsx',language())));word.disabled=print.disabled;tools.append(print,final,word,excel);c.append(tools);
- if(blockers.length)c.append(node('p',blockers.length+' active artifact(s) need approval or correction before final export. Preview below is not final.','warning no-print'));
- const doc=node('div','','document');doc.append(node('h2',w.name+' — Requirements specification'),node('p',blockers.length?'DRAFT — Not approved for final export':'Approved artifact register'));
- for(const [type,label] of Object.entries(TYPES)){const arr=active.filter(x=>x.type===type);if(!arr.length)continue;doc.append(node('h3',t(label)));for(const x of arr){const art=node('article');art.append(node('h3',x.id+' — '+x.title),node('p',x.description),node('p','Owner: '+x.owner+' | Priority: '+x.priority+' | Status: '+x.status+' | v'+x.version),node('p','Source: '+x.source+' — '+x.sourceRef),node('p','Upstream: '+(x.parents.join(', ')||'—')),node('p','Verification: '+(x.verification||'—')));doc.append(art);}}
+ if(blockers.length)c.append(node('p',blockers.length+' '+t('active artifact(s) need approval or correction before final export. Preview below is not final.'),'warning no-print'));
+ const doc=node('div','','document');doc.append(node('h2',w.name+' — '+t('Requirements specification')),node('p',t(blockers.length?'DRAFT — Not approved for final export':'Approved artifact register')));
+ for(const [type,label] of Object.entries(TYPES)){const arr=active.filter(x=>x.type===type);if(!arr.length)continue;doc.append(node('h3',t(label)));for(const x of arr){const art=node('article');art.append(node('h3',x.id+' — '+x.title),node('p',x.description),node('p',t('Owner')+': '+x.owner+' | Priority: '+x.priority+' | Status: '+x.status+' | v'+x.version),node('p',t('Source')+': '+x.source+' — '+x.sourceRef),node('p',t('Upstream')+': '+(x.parents.join(', ')||'—')),node('p',t('Verification')+': '+(x.verification||'—')));doc.append(art);}}
  c.append(doc);
 }
 function markdown(){const safe=s=>String(s).replace(/[\\`*_{}\[\]<>#|]/g,'\\$&');return '# '+safe(w.name)+' — Requirements specification\n\n'+w.items.filter(x=>x.status==='Approved').map(x=>'## '+x.id+' — '+safe(x.title)+'\n\n'+safe(x.description)+'\n\nOwner: '+safe(x.owner)+'  \nPriority: '+x.priority+'  \nVersion: '+x.version+'  \nSource: '+safe(x.sourceRef)+'  \nUpstream: '+x.parents.join(', ')+'  \nVerification: '+safe(x.verification)).join('\n\n');}
@@ -106,6 +107,7 @@ function render(){
  translateStatic(cloud);
  const handlers={register,trace,quality,history,report};
  if(handlers[view])handlers[view]();
+ else if(view==='diagrams')diagramView(w,{heading,node,table,button,select,projectId,commit:async op=>{try{await commit(governance(w,op),{operation:op});notice('Saved.');return true;}catch(e){notice(e.message);return false;}}});
  else professionalView(view,w,{heading,node,table,button,select,refs,ref,commit:async op=>run(async()=>{await commit(governance(w,op),{operation:op});notice(t('Saved.'));})});
 }
 function refreshProjects(){
@@ -162,8 +164,8 @@ for(const id of ['close','cancel'])$(id).addEventListener('click',()=>$('editor'
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(y=>y.removeAttribute('aria-current'));b.setAttribute('aria-current','page');render();}));
 $('project').value=w.name;
 $('project').addEventListener('change',()=>run(async()=>{const name=$('project').value.trim();if(!name)throw Error('Workspace name cannot be empty.');await commit({...w,name},{operation:{kind:'rename',name}});notice('Workspace renamed.');}));
-$('sample').addEventListener('click',()=>run(async()=>{if(!confirm('Replace this workspace with synthetic sample data? Export a backup first if needed.'))return;await commit(demo(),{replace:true});notice('Synthetic sample loaded. This is not real stakeholder evidence.');}));
-$('reset').addEventListener('click',()=>run(async()=>{if(!confirm('Replace this workspace with an empty workspace? Back up your current data first.'))return;await commit(empty('Untitled workspace'),{replace:true});notice('New workspace created.');}));
+$('sample').addEventListener('click',()=>run(async()=>{if(!confirm(t('Replace this workspace with synthetic sample data? Export a backup first if needed.')))return;await commit(demo(),{replace:true});notice('Synthetic sample loaded. This is not real stakeholder evidence.');}));
+$('reset').addEventListener('click',()=>run(async()=>{if(!confirm(t('Replace this workspace with an empty workspace? Back up your current data first.')))return;await commit(empty('Untitled workspace'),{replace:true});notice('New workspace created.');}));
 $('backup').addEventListener('click',()=>run(async()=>{const raw=storageReady?JSON.stringify(w,null,2):localStorage.getItem(localKey());download('requirement-studio-backup.json',raw||JSON.stringify(w,null,2),'application/json');}));
 $('import').addEventListener('click',()=>$('file').click());
 $('file').addEventListener('change',async()=>{const f=$('file').files[0];$('file').value='';if(!f)return;try{if(f.size>10*1024*1024)throw Error('Backup exceeds 10 MB.');const next=validateWorkspace(JSON.parse(await f.text()));if(!confirm('Replace this workspace with '+next.name+'?'))return;await commit(next,{replace:true});notice('Backup imported.');}catch(e){notice('Import failed: '+e.message);}});

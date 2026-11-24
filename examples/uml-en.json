@@ -58,13 +58,13 @@
       "id": "more",
       "type": "usecase",
       "label": "Request more information",
-      "row": 6
+      "row": 3
     },
     {
       "id": "audit",
       "type": "usecase",
       "label": "Record decision",
-      "row": 5
+      "row": 4
     }
   ],
   "edges": [

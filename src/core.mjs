@@ -1,3 +1,4 @@
+import {validateDiagram} from './diagram.mjs';
 export const TYPES = {
  BO: 'Business objective', BR: 'Business requirement', FR: 'Functional requirement',
  NFR: 'Non-functional requirement', RULE: 'Business rule', US: 'User story',
@@ -20,8 +21,8 @@ export const FIELDS={
  EP:[['outcome','Desired outcome']], FE:[['outcome','Desired outcome']],
  AS:[['validation','Validation plan']], CO:[['constraint','Constraint'],['rationale','Business rationale']]
 };
-export const empty = name => ({schema:1, name, items:[], history:[], counters:{}, stakeholders:[], scope:'', baselines:[], changes:[], runs:[]});
-export function upgrade(w){return {...w,stakeholders:w.stakeholders??[],scope:w.scope??'',baselines:w.baselines??[],changes:w.changes??[],runs:w.runs??[]};}
+export const empty = name => ({schema:1, name, items:[], history:[], counters:{}, stakeholders:[], scope:'', baselines:[], changes:[], runs:[], diagrams:[]});
+export function upgrade(w){return {...w,stakeholders:w.stakeholders??[],scope:w.scope??'',baselines:w.baselines??[],changes:w.changes??[],runs:w.runs??[],diagrams:w.diagrams??[]};}
 export function validateWorkspace(w) {
  const str = v => typeof v === 'string';
  if (!w || w.schema !== 1 || !str(w.name) || !w.name.trim() || !Array.isArray(w.items) || !Array.isArray(w.history) || !w.counters || typeof w.counters !== 'object' || Array.isArray(w.counters)) throw Error('Invalid workspace schema.');
@@ -39,13 +40,15 @@ export function validateWorkspace(w) {
  }
  for (const [k,v] of Object.entries(w.counters)) if (!Object.hasOwn(TYPES,k) || !Number.isSafeInteger(v) || v < 0) throw Error('Invalid counter.');
  for (const h of w.history) if (!h || !str(h.id) || !str(h.at) || !str(h.action) || !h.snapshot || h.snapshot.id !== h.id || !Number.isSafeInteger(h.snapshot.version)) throw Error('Invalid history.');
- for(const k of ['stakeholders','baselines','changes','runs']) if(w[k]!==undefined&&!Array.isArray(w[k]))throw Error('Invalid '+k);
+ for(const k of ['stakeholders','baselines','changes','runs','diagrams']) if(w[k]!==undefined&&!Array.isArray(w[k]))throw Error('Invalid '+k);
+ if((w.diagrams??[]).length>50)throw Error('Diagram limit reached.');
+ for(const d of w.diagrams??[])if(!d||!str(d.id)||!str(d.updatedAt)||validateDiagram(d.model).some(f=>f.level==='error'))throw Error('Invalid diagram record.');
  if(w.scope!==undefined&&!str(w.scope))throw Error('Invalid scope.');
  for(const s of w.stakeholders??[])if(!s||!str(s.id)||!str(s.name)||!str(s.role)||!str(s.interest)||!s.name.trim())throw Error('Invalid stakeholder.');
  for(const b of w.baselines??[])if(!b||!str(b.id)||!str(b.name)||!str(b.at)||!Array.isArray(b.items)||!b.items.every(x=>x&&str(x.id)&&Number.isSafeInteger(x.version)))throw Error('Invalid baseline.');
  for(const c of w.changes??[])if(!c||!str(c.id)||!str(c.target)||!ids.has(c.target)||!str(c.reason)||!str(c.impact)||!['Submitted','Accepted','Rejected','Implemented'].includes(c.status)||!Number.isSafeInteger(c.version))throw Error('Invalid change request.');
  for(const r of w.runs??[])if(!r||!str(r.id)||!ids.has(r.target)||!Number.isSafeInteger(r.version)||!['Pass','Fail','Blocked'].includes(r.result)||!str(r.evidence)||!str(r.at))throw Error('Invalid test run.');
- for(const k of ['stakeholders','baselines','changes','runs'])if(new Set((w[k]??[]).map(x=>x.id)).size!==(w[k]??[]).length)throw Error('Duplicate record.');
+ for(const k of ['stakeholders','baselines','changes','runs','diagrams'])if(new Set((w[k]??[]).map(x=>x.id)).size!==(w[k]??[]).length)throw Error('Duplicate record.');
  return w;
 }
 export function newItem(w,type) {
@@ -165,6 +168,15 @@ export function governance(w,op){
  const next=structuredClone(upgrade(w)), text=v=>typeof v==='string'?v.trim():'', at=new Date().toISOString();
  const id=()=>crypto.randomUUID();
  switch(op.kind){
+ case 'diagram-save':{
+  if(!op.model||validateDiagram(op.model).some(f=>f.level==='error'))throw Error('Invalid diagram model.');
+  const existing=next.diagrams.find(d=>d.id===op.id);
+  if(op.id&&!existing)throw Error('Diagram not found.');
+  const record={id:existing?.id??id(),updatedAt:at,model:structuredClone(op.model)};
+  next.diagrams=existing?next.diagrams.map(d=>d.id===record.id?record:d):[...next.diagrams,record];break;}
+ case 'diagram-remove':{
+  if(!next.diagrams.some(d=>d.id===op.id))throw Error('Diagram not found.');
+  next.diagrams=next.diagrams.filter(d=>d.id!==op.id);break;}
  case 'scope':next.scope=text(op.value);break;
  case 'stakeholder':if(!text(op.name))throw Error('Stakeholder name required.');next.stakeholders.push({id:id(),name:text(op.name),role:text(op.role),interest:text(op.interest)});break;
  case 'baseline':{

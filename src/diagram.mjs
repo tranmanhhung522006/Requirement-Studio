@@ -77,7 +77,7 @@ function intersects(a,b,c,d){
 }
 function simplify(p){const out=[];for(const a of p){if(out.length&&same(out.at(-1),a))continue;const b=out.at(-1),c=out.at(-2);if(c&&((c.x===b.x&&b.x===a.x)||(c.y===b.y&&b.y===a.y)))out.pop();out.push(a);}return out;}
 function place(m){
- const nodes=[],w=280,pad=48,head=100,rowGap=72;
+ const nodes=[],w=280,pad=48,head=130,rowGap=72;
  const mk=(n,x,y,width,lines,h)=>({...n,x,y,w:width,h,lines});
  const autoRows=new Map();if(m.kind==='bpmn'){
   const q=m.nodes.filter(n=>n.type==='start').map(n=>n.id);q.forEach(id=>autoRows.set(id,0));
@@ -87,7 +87,7 @@ function place(m){
  const content=m.nodes.filter(n=>n.type!=='actor');
  for(const n of content){
   const lines=wrapText(n.label,24);
-  const col=m.kind==='bpmn'?m.lanes.findIndex(l=>l.id===n.lane):(['include','extend'].some(k=>m.edges.some(e=>e.type===k&&e.to===n.id))?1:0);
+  const col=m.kind==='bpmn'?m.lanes.findIndex(l=>l.id===n.lane):(m.edges.some(e=>(e.type==='include'&&e.to===n.id)||(e.type==='extend'&&e.from===n.id))?1:0);
   let row=n.row??(m.kind==='bpmn'?(autoRows.get(n.id)??0):0);
   while(used.has(col+':'+row))row++;used.add(col+':'+row);
   const h=m.kind==='uml'?Math.max(86,lines.length*21+44):n.type==='task'?Math.max(68,lines.length*21+30):Math.max(100,lines.length*18+56);
@@ -97,21 +97,21 @@ function place(m){
  const ys=[];let y=head+30;for(const h of heights){ys.push(y);y+=h+rowGap;}
  let boundary,width,height,lanes=[];
  if(m.kind==='bpmn'){
-  width=pad*2+m.lanes.length*(w+100);height=y+20;boundary=rect(pad,60,width-pad*2,height-90);
-  lanes=m.lanes.map((l,i)=>({...l,...rect(pad+i*(w+100),60,w+100,height-90)}));
+  width=pad*2+m.lanes.length*(w+100);height=y+20;boundary=rect(pad,100,width-pad*2,height-130);
+  lanes=m.lanes.map((l,i)=>({...l,...rect(pad+i*(w+100),100,w+100,height-130)}));
   for(const a of assigned){const cx=lanes[a.col].x+(w+100)/2;const nw=a.n.type==='task'?w:200;nodes.push(mk(a.n,cx-nw/2,ys[a.row]+(heights[a.row]-a.h)/2,nw,a.lines,a.h));}
  }else{
-  const cols=assigned.some(x=>x.col===1)?2:1, bw=cols*(w+130)+20;
+  const cols=assigned.some(x=>x.col===1)?2:1, bw=cols*(w+220)+20;
   width=bw+440;const actors=m.nodes.filter(n=>n.type==='actor');height=Math.max(y+20,160+Math.max(actors.filter(n=>n.side!=='right').length,actors.filter(n=>n.side==='right').length)*160);
-  boundary=rect(220,60,bw,height-90);
-  for(const a of assigned)nodes.push(mk(a.n,boundary.x+75+a.col*(w+130),ys[a.row]+(heights[a.row]-a.h)/2,w,a.lines,a.h));
+  boundary=rect(220,100,bw,height-130);
+  for(const a of assigned)nodes.push(mk(a.n,boundary.x+75+a.col*(w+220),ys[a.row]+(heights[a.row]-a.h)/2,w,a.lines,a.h));
   for(const side of ['left','right']){const group=actors.filter(n=>(n.side??'left')===side);group.forEach((n,i)=>{const lines=wrapText(n.label,16),h=78+lines.length*20;nodes.push(mk(n,side==='left'?30:width-190,100+(height-200)*(i+.5)/group.length-h/2,160,lines,h));});}
  }
  return {width,height,boundary,lanes,nodes};
 }
 function ports(n){
  const cx=n.x+n.w/2,cy=n.y+n.h/2;
- if(n.type==='actor')return [{a:{x:cx-25,y:n.y+36},b:{x:n.x-18,y:n.y+36},dir:1},{a:{x:cx+25,y:n.y+36},b:{x:n.x+n.w+18,y:n.y+36},dir:1}];
+ if(n.type==='actor')return [{a:{x:cx-25,y:n.y+36},b:{x:n.x-18,y:n.y+36},dir:1},{a:{x:cx+25,y:n.y+36},b:{x:n.x+n.w+18,y:n.y+36},dir:1}].filter((p,i)=>n.side==='right'?i===0:i===1);
  // Bounding box also includes event/gateway labels. Side connectors use actual symbol, not its text box.
  if(['start','end','exclusive','parallel'].includes(n.type)){
   const r=['start','end'].includes(n.type)?18:24,sy=n.y+27;
@@ -126,7 +126,7 @@ class Heap{
 function router(layout){
  const obstacles=layout.nodes.map(n=>inflate(n,9)),all=layout.nodes.flatMap(ports);
  const xs=[...new Set([12,layout.width-12,...obstacles.flatMap(r=>[r.x,r.x+r.w]),...all.map(p=>p.b.x)])].sort((a,b)=>a-b);
- const ys=[...new Set([92,layout.height-12,...obstacles.flatMap(r=>[r.y,r.y+r.h]),...all.map(p=>p.b.y)])].sort((a,b)=>a-b);
+ const ys=[...new Set([142,layout.height-12,...obstacles.flatMap(r=>[r.y,r.y+r.h]),...all.map(p=>p.b.y)])].sort((a,b)=>a-b);
  const W=xs.length,H=ys.length,index=p=>ys.indexOf(p.y)*W+xs.indexOf(p.x),point=i=>({x:xs[i%W],y:ys[Math.floor(i/W)]});
  const blocked=Array.from({length:W*H},(_,i)=>{const p=point(i);return obstacles.some(r=>inside(p,r));});
  const adjacent=new Map();
@@ -160,7 +160,7 @@ function labelBox(edge,layout,labels,all){
  const candidates=segments(edge.points).sort((a,b)=>(Math.abs(b[1].x-b[0].x)+Math.abs(b[1].y-b[0].y))-(Math.abs(a[1].x-a[0].x)+Math.abs(a[1].y-a[0].y)));
  for(const [a,b] of candidates)for(const frac of [.5,.3,.7])for(const side of [-1,1]){
   const x=a.x+(b.x-a.x)*frac,y=a.y+(b.y-a.y)*frac,r=a.y===b.y?rect(x-w/2,y+(side<0?-h-7:7),w,h):rect(x+(side<0?-w-7:7),y-h/2,w,h);
-  if(r.x<8||r.y<94||r.x+r.w>layout.width-8||r.y+r.h>layout.height-8)continue;
+  if(r.x<8||r.y<144||r.x+r.w>layout.width-8||r.y+r.h>layout.height-8)continue;
   if(layout.nodes.some(n=>overlap(inflate(n,5),r))||labels.some(l=>overlap(inflate(l,4),r))||all.some(s=>segmentHits(s[0],s[1],inflate(r,3))))continue;
   return {...r,lines};
  }return null;
@@ -186,9 +186,9 @@ const box=(r,more='')=>'<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+
 export function renderSvg(m,result=layoutDiagram(m)){
  if(!result.layout)throw Error('Diagram has structural errors.');
  const l=result.layout,parts=['<svg xmlns="http://www.w3.org/2000/svg" width="'+l.width+'" height="'+l.height+'" viewBox="0 0 '+l.width+' '+l.height+'" role="img"><title>'+esc(m.title)+'</title><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 5 L0 10 Z" fill="#171717"/></marker><marker id="open" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L10 5.5 L0 11" fill="none" stroke="#171717"/></marker><marker id="triangle" markerWidth="15" markerHeight="14" refX="14" refY="7" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L14 7 L0 14 Z" fill="white" stroke="#171717"/></marker></defs><rect width="100%" height="100%" fill="white"/><g font-family="Times New Roman, Liberation Serif, serif" fill="#171717" stroke-linejoin="round" stroke-linecap="round">'];
- parts.push(txt(wrapText(m.title,65),l.width/2,34,23,'font-weight="bold"'));
+ parts.push(txt(wrapText(m.title,80),l.width/2,34,23,'font-weight="bold"'));
  parts.push(box(l.boundary,'fill="none" stroke="#171717" stroke-width="1.5"'));
- if(m.kind==='bpmn')for(const lane of l.lanes){parts.push(box(lane,'fill="none" stroke="#777" stroke-width="1"'),box(rect(lane.x,lane.y,lane.w,34),'fill="#f1f1f1" stroke="#777"'),txt(wrapText(lane.label,34).slice(0,1),lane.x+lane.w/2,lane.y+23,17,'font-weight="bold"'));}
+ if(m.kind==='bpmn')for(const lane of l.lanes){parts.push(box(lane,'fill="none" stroke="#777" stroke-width="1"'),box(rect(lane.x,lane.y,lane.w,54),'fill="#f1f1f1" stroke="#777"'),txt(wrapText(lane.label,36),lane.x+lane.w/2,lane.y+19,15,'font-weight="bold"'));}
  for(const e of l.edges){const marker=e.type==='association'?'':e.type==='sequence'?'arrow':e.type==='generalization'?'triangle':'open';parts.push('<polyline points="'+e.points.map(p=>p.x+','+p.y).join(' ')+'" stroke="#171717" stroke-width="1.5" fill="none" '+(['include','extend'].includes(e.type)?'stroke-dasharray="6 4" ':'')+(marker?'marker-end="url(#'+marker+')"':'')+'/>');}
  for(const n of l.nodes){const cx=n.x+n.w/2,cy=n.y+n.h/2;
   if(n.type==='actor'){const y=n.y;parts.push('<g fill="none" stroke="#171717" stroke-width="1.6"><circle cx="'+cx+'" cy="'+(y+13)+'" r="11"/><path d="M'+cx+' '+(y+24)+' V'+(y+52)+' M'+(cx-25)+' '+(y+36)+' H'+(cx+25)+' M'+cx+' '+(y+52)+' l-20 22 M'+cx+' '+(y+52)+' l20 22"/></g>',txt(n.lines,cx,y+94,17));}
@@ -212,7 +212,7 @@ export function exportBpmn(m,result=layoutDiagram(m)){
 }
 export function sampleDiagram(kind='uml',lang='en'){
  const vi=lang==='vi',pick=(en,v)=>vi?v:en,n=(id,type,label,extra={})=>({id,type,label,...extra}),e=(id,from,to,type,label)=>({id,from,to,type,...(label?{label}:{})});
- if(kind==='uml')return {kind,title:pick('Purchase approval system','Hệ thống phê duyệt mua hàng'),nodes:[n('employee','actor',pick('Employee','Nhân viên')),n('manager','actor',pick('Manager','Quản lý')),n('budget','actor',pick('Budget system','Hệ thống ngân sách'),{side:'right'}),n('create','usecase',pick('Create purchase request','Tạo yêu cầu mua hàng')),n('submit','usecase',pick('Submit purchase request','Gửi yêu cầu mua hàng')),n('track','usecase',pick('Track status','Theo dõi trạng thái')),n('review','usecase',pick('Review request','Xem xét yêu cầu')),n('approve','usecase',pick('Approve request','Phê duyệt yêu cầu')),n('reject','usecase',pick('Reject request','Từ chối yêu cầu')),n('check','usecase',pick('Validate budget','Kiểm tra ngân sách'),{row:1}),n('more','usecase',pick('Request more information','Yêu cầu bổ sung thông tin'),{row:6}),n('audit','usecase',pick('Record decision','Ghi nhận quyết định'),{row:5})],edges:[e('a1','employee','create','association'),e('a2','employee','submit','association'),e('a3','employee','track','association'),e('a4','manager','review','association'),e('a5','manager','approve','association'),e('a6','manager','reject','association'),e('a7','budget','check','association'),e('i1','submit','check','include'),e('i2','approve','audit','include'),e('i3','reject','audit','include'),e('x1','more','review','extend')]};
+ if(kind==='uml')return {kind,title:pick('Purchase approval system','Hệ thống phê duyệt mua hàng'),nodes:[n('employee','actor',pick('Employee','Nhân viên')),n('manager','actor',pick('Manager','Quản lý')),n('budget','actor',pick('Budget system','Hệ thống ngân sách'),{side:'right'}),n('create','usecase',pick('Create purchase request','Tạo yêu cầu mua hàng')),n('submit','usecase',pick('Submit purchase request','Gửi yêu cầu mua hàng')),n('track','usecase',pick('Track status','Theo dõi trạng thái')),n('review','usecase',pick('Review request','Xem xét yêu cầu')),n('approve','usecase',pick('Approve request','Phê duyệt yêu cầu')),n('reject','usecase',pick('Reject request','Từ chối yêu cầu')),n('check','usecase',pick('Validate budget','Kiểm tra ngân sách'),{row:1}),n('more','usecase',pick('Request more information','Yêu cầu bổ sung thông tin'),{row:3}),n('audit','usecase',pick('Record decision','Ghi nhận quyết định'),{row:4})],edges:[e('a1','employee','create','association'),e('a2','employee','submit','association'),e('a3','employee','track','association'),e('a4','manager','review','association'),e('a5','manager','approve','association'),e('a6','manager','reject','association'),e('a7','budget','check','association'),e('i1','submit','check','include'),e('i2','approve','audit','include'),e('i3','reject','audit','include'),e('x1','more','review','extend')]};
  return {kind:'bpmn',title:pick('Purchase request approval','Quy trình phê duyệt mua hàng'),lanes:[{id:'employee',label:pick('Employee','Nhân viên')},{id:'system',label:pick('System','Hệ thống')},{id:'manager',label:pick('Manager','Quản lý')}],nodes:[n('start','start',pick('Request needed','Phát sinh nhu cầu'),{lane:'employee',row:0}),n('create','task',pick('Create purchase request','Tạo yêu cầu mua hàng'),{lane:'employee',row:1}),n('submit','task',pick('Submit request','Gửi yêu cầu'),{lane:'employee',row:2}),n('validate','task',pick('Validate budget','Kiểm tra ngân sách'),{lane:'system',row:2}),n('budget','exclusive',pick('Budget available?','Đủ ngân sách?'),{lane:'system',row:3}),n('notify','task',pick('Notify insufficient budget','Thông báo thiếu ngân sách'),{lane:'employee',row:3}),n('stop','end',pick('Not submitted','Chưa gửi duyệt'),{lane:'employee',row:4}),n('review','task',pick('Review purchase request','Xem xét yêu cầu'),{lane:'manager',row:4}),n('decision','exclusive',pick('Approved?','Được duyệt?'),{lane:'manager',row:5}),n('approved','task',pick('Record approval','Ghi nhận phê duyệt'),{lane:'system',row:5}),n('rejected','task',pick('Record rejection','Ghi nhận từ chối'),{lane:'system',row:6}),n('done','end',pick('Approved','Đã duyệt'),{lane:'employee',row:5}),n('denied','end',pick('Rejected','Đã từ chối'),{lane:'employee',row:6})],edges:[e('f1','start','create','sequence'),e('f2','create','submit','sequence'),e('f3','submit','validate','sequence'),e('f4','validate','budget','sequence'),e('f5','budget','notify','sequence',pick('No','Không')),e('f6','notify','stop','sequence'),e('f7','budget','review','sequence',pick('Yes','Có')),e('f8','review','decision','sequence'),e('f9','decision','approved','sequence',pick('Yes','Có')),e('f10','decision','rejected','sequence',pick('No','Không')),e('f11','approved','done','sequence'),e('f12','rejected','denied','sequence')]};
 }
 export function fromUseCases(w){

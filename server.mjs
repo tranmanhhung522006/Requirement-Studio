@@ -5,14 +5,14 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {authorize,allowedWrite,validateSave,createStore,applyOperation} from './src/cloud.mjs';
 const root=new URL('.',import.meta.url);
-const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/i18n.mjs':'src/i18n.mjs','/src/professional.mjs':'src/professional.mjs','/src/export.mjs':'src/export.mjs','/src/styles.css':'src/styles.css'};
+const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/i18n.mjs':'src/i18n.mjs','/src/professional.mjs':'src/professional.mjs','/src/export.mjs':'src/export.mjs','/src/diagram.mjs':'src/diagram.mjs','/src/diagram-ui.mjs':'src/diagram-ui.mjs','/src/styles.css':'src/styles.css'};
 const mime={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 const MAX=10*1024*1024;
 export function buildServer({store=null,user='',password='',origin=''}={}){
  const failures=new Map();
  return createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost'),path=url.pathname,project=url.searchParams.get('project')||'default';
-  const headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"};
+  const headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"};
   if(store)headers['Strict-Transport-Security']='max-age=31536000';
   const json=(status,data,extra={})=>{res.writeHead(status,{...headers,'Content-Type':'application/json; charset=utf-8',...extra});res.end(JSON.stringify(data));};
   try{
