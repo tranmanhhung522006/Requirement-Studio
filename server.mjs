@@ -1,13 +1,17 @@
+import {randomUUID} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-import {authorize,allowedWrite,validateSave,createStore} from './src/cloud.mjs';
+import {authorize,allowedWrite,validateSave,createStore,applyOperation} from './src/cloud.mjs';
 const root=new URL('.',import.meta.url);
-const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/styles.css':'src/styles.css'};
+const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/i18n.mjs':'src/i18n.mjs','/src/professional.mjs':'src/professional.mjs','/src/export.mjs':'src/export.mjs','/src/styles.css':'src/styles.css'};
 const mime={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 const MAX=10*1024*1024;
 export function buildServer({store=null,user='',password='',origin=''}={}){
+ const failures=new Map();
  return createServer(async(req,res)=>{
-  const path=String(req.url).split('?')[0];
+  const url=new URL(req.url,'http://localhost'),path=url.pathname,project=url.searchParams.get('project')||'default';
   const headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"};
   if(store)headers['Strict-Transport-Security']='max-age=31536000';
   const json=(status,data,extra={})=>{res.writeHead(status,{...headers,'Content-Type':'application/json; charset=utf-8',...extra});res.end(JSON.stringify(data));};
@@ -16,19 +20,49 @@ export function buildServer({store=null,user='',password='',origin=''}={}){
     if(store)await store.health();
     return json(200,{ok:true});
    }
-   if(store&&!authorize(req.headers.authorization,user,password))return json(401,{error:'Authentication required.'},{'WWW-Authenticate':'Basic realm="Requirement Studio", charset="UTF-8"'});
-   if(path==='/api/workspace'){
-    if(req.method==='GET')return json(200,store?{mode:'cloud',...await store.read()}:{mode:'local'});
-    if(!store||req.method!=='PUT')return json(405,{error:'Method not allowed.'});
+   if(store){
+    const ip=req.socket.remoteAddress||'unknown',now=Date.now();
+    // Bounded global fallback because reverse proxy addresses may be shared.
+    for(const [key,v] of failures)if(v.until<=now)failures.delete(key);
+    if(!authorize(req.headers.authorization,user,password)){
+     const v=failures.get(ip)||{count:0,until:now+60000};
+     if(v.count>=30)return json(429,{error:'Too many authentication attempts. Retry later.'},{'Retry-After':'60'});
+     if(req.headers.authorization&&failures.size<1000){v.count++;failures.set(ip,v);}
+     return json(401,{error:'Authentication required.'},{'WWW-Authenticate':'Basic realm="Requirement Studio", charset="UTF-8"'});
+    }
+   }
+   if(!/^(default|[a-f0-9-]{36})$/.test(project))return json(400,{error:'Invalid project ID.'});
+   if(path==='/api/projects'&&req.method==='GET')return json(200,store?{projects:await store.list()}:{projects:[]});
+   if(path==='/api/projects'||path==='/api/workspace'){
+    if(req.method==='GET'){
+     if(!store)return json(200,{mode:'local'});
+     const current=await store.read(project);
+     return current?json(200,{mode:'cloud',...current}):json(404,{error:'Project not found.'});
+    }
+    if(!store||!(path==='/api/projects'?req.method==='POST':req.method==='PUT'))return json(405,{error:'Method not allowed.'});
     if(!allowedWrite(req.headers,origin))return json(403,{error:'Invalid request origin or content type.'});
     if(Number(req.headers['content-length'])>MAX){res.setHeader('Connection','close');return json(413,{error:'Workspace exceeds 10 MB.'});}
     let n=0;const chunks=[];
     for await(const chunk of req){n+=chunk.length;if(n>MAX){res.destroy();return;}chunks.push(chunk);}
     let body,workspace;
-    try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));workspace=validateSave(body);}catch(e){return json(400,{error:e.message});}
-    const revision=await store.write(body.revision,workspace);
+    try{
+     body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+     if(path==='/api/projects'){
+      if(typeof body.name!=='string'||!body.name.trim()||body.name.length>120)throw Error('Invalid project name.');
+      if((await store.list()).length>=100)throw Error('Project limit reached.');
+      const id=randomUUID();await store.create(id,body.name.trim());return json(201,{id});
+     }
+     if(body.operation){
+      const current=await store.read(project);
+      if(!current)return json(404,{error:'Project not found.'});
+      if(current.revision!==body.revision)return json(409,{error:'Workspace changed on another device. Reload and retry.'});
+      workspace=applyOperation(current.workspace,body.operation);
+      workspace=validateSave({revision:body.revision,workspace});
+     }else workspace=validateSave(body);
+    }catch(e){return json(400,{error:e.message});}
+    const revision=await store.write(body.revision,workspace,project,body.operation?.kind||'import');
     if(revision===null)return json(409,{error:'Workspace changed on another device. Back up unsaved work if needed, reload and retry.'});
-    return json(200,{revision});
+    return json(200,{revision,workspace});
    }
    if(!['GET','HEAD'].includes(req.method)||!Object.hasOwn(files,path))return json(404,{error:'Not found.'});
    const data=await readFile(new URL(files[path],root));
@@ -52,4 +86,4 @@ export async function start(){
  server.listen(port,cloud?'0.0.0.0':'127.0.0.1',()=>console.log('Requirement Studio listening on port '+port+' ('+(cloud?'cloud':'local')+')'));
  for(const sig of ['SIGINT','SIGTERM'])process.once(sig,()=>{server.close(async()=>{if(store)await store.close();process.exit(0);});});
 }
-if(process.argv[1]&&new URL('file://'+process.argv[1]).href===import.meta.url)start().catch(e=>{console.error('Startup failed:',e.code||e.name);process.exitCode=1;});
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))start().catch(e=>{console.error('Startup failed:',e.code||e.name);process.exitCode=1;});

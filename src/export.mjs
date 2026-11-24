@@ -1,0 +1,30 @@
+import {TYPES,matrix} from './core.mjs';
+const xml=s=>String(s??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&apos;");
+const enc=new TextEncoder();
+function crc(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^0xffffffff)>>>0;}
+function zip(entries){
+ const chunks=[],central=[];let offset=0;
+ for(const [name,value] of Object.entries(entries)){
+  const n=enc.encode(name),b=enc.encode(value),c=crc(b);
+  const h=new Uint8Array(30+n.length),v=new DataView(h.buffer);v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint32(14,c,true);v.setUint32(18,b.length,true);v.setUint32(22,b.length,true);v.setUint16(26,n.length,true);h.set(n,30);
+  const z=new Uint8Array(46+n.length),d=new DataView(z.buffer);d.setUint32(0,0x02014b50,true);d.setUint16(4,20,true);d.setUint16(6,20,true);d.setUint32(16,c,true);d.setUint32(20,b.length,true);d.setUint32(24,b.length,true);d.setUint16(28,n.length,true);d.setUint32(42,offset,true);z.set(n,46);central.push(z);chunks.push(h,b);offset+=h.length+b.length;
+ }
+ const end=new Uint8Array(22),v=new DataView(end.buffer);v.setUint32(0,0x06054b50,true);v.setUint16(8,central.length,true);v.setUint16(10,central.length,true);v.setUint32(12,central.reduce((s,x)=>s+x.length,0),true);v.setUint32(16,offset,true);return new Blob([...chunks,...central,end]);
+}
+const declaration='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+const rel=(target,type)=>declaration+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'+type+'" Target="'+target+'"/></Relationships>';
+const content=(part,type,extra='')=>declaration+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="'+part+'" ContentType="'+type+'"/>'+extra+'</Types>';
+const para=(s,heading=false)=>'<w:p><w:pPr>'+(heading?'<w:keepNext/><w:spacing w:before="240" w:after="120"/>':'<w:spacing w:after="100"/>')+'</w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="'+(heading?28:24)+'"/>'+(heading?'<w:b/>':'')+'</w:rPr><w:t xml:space="preserve">'+xml(s)+'</w:t></w:r></w:p>';
+export function buildDocx(w,lang='en'){
+ const vi=lang==='vi',lines=[para(w.name+' — '+(vi?'Đặc tả yêu cầu':'Requirements specification'),true)];
+ for(const x of w.items.filter(x=>x.status==='Approved')){lines.push(para(x.id+' — '+x.title,true),...x.description.split(/\r?\n/).map(s=>para(s)),para((vi?'Phụ trách: ':'Owner: ')+x.owner),para((vi?'Nguồn: ':'Source: ')+x.sourceRef),para((vi?'Xác minh: ':'Verification: ')+x.verification),para((vi?'Liên kết: ':'Upstream: ')+x.parents.join(', ')));for(const [k,v] of Object.entries(x.details??{}))if(v)lines.push(para(k+': '+v));}
+ return zip({'[Content_Types].xml':content('/word/document.xml','application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml'),'_rels/.rels':rel('word/document.xml','officeDocument'),'word/document.xml':declaration+'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'+lines.join('')+'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1020" w:right="1020" w:bottom="1020" w:left="1020"/></w:sectPr></w:body></w:document>'});
+}
+export function buildXlsx(w,lang='en'){
+ const vi=lang==='vi',rows=[vi?['ID','Tiêu đề','Nguồn','Câu chuyện','Tiêu chí','Kiểm thử','Liên kết đạt','Kiểm thử đạt']:['ID','Title','Upstream','Stories','Criteria','Tests','Coverage','Passed current tests'],...matrix(w).map(x=>[x.id,x.title,x.upstream.join(', '),x.stories.join(', '),x.criteria.join(', '),x.tests.join(', '),x.covered?(vi?'Có':'Yes'):(vi?'Không':'No'),x.passed.join(', ')])];
+ const data=rows.map((row,i)=>'<row r="'+(i+1)+'">'+row.map((s,j)=>'<c r="'+String.fromCharCode(65+j)+(i+1)+'" t="inlineStr"><is><t xml:space="preserve">'+xml(s)+'</t></is></c>').join('')+'</row>').join('');
+ return zip({'[Content_Types].xml':content('/xl/workbook.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml','<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'),'_rels/.rels':rel('xl/workbook.xml','officeDocument'),'xl/_rels/workbook.xml.rels':rel('worksheets/sheet1.xml','worksheet'),'xl/workbook.xml':declaration+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="RTM" sheetId="1" r:id="rId1"/></sheets></workbook>','xl/worksheets/sheet1.xml':declaration+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="42" customWidth="1"/><col min="3" max="8" width="24" customWidth="1"/></cols><sheetData>'+data+'</sheetData><autoFilter ref="A1:H'+rows.length+'"/></worksheet>'});
+}
+export function exportDocument(w,type,lang){
+ const blob=type==='docx'?buildDocx(w,lang):buildXlsx(w,lang),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=type==='docx'?'specification.docx':'traceability.xlsx';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
