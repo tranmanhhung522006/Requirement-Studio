@@ -155,15 +155,15 @@ function router(layout){
   const source=ports(from).filter(p=>!blocked[index(p.b)]),target=ports(to).filter(p=>!blocked[index(p.b)]),targets=new Map(target.map(p=>[index(p.b),p]));
   if(!source.length||!target.length)return null;
   const heap=new Heap(),dist=new Map(),prev=new Map(),orig=new Map();
-  for(const p of source){const k=index(p.b)*3+p.dir;dist.set(k,0);orig.set(k,p);heap.push([0,k]);}
+  const heuristic=i=>{const p=point(i);let h=Infinity;for(const t of target)h=Math.min(h,Math.abs(p.x-t.b.x)+Math.abs(p.y-t.b.y));return h;};
+  for(const p of source){const k=index(p.b)*3+p.dir;dist.set(k,0);orig.set(k,p);heap.push([heuristic(index(p.b)),k]);}
   let finish=null;
   while(heap.a.length){
-   const [cost,k]=heap.pop();if(cost!==dist.get(k))continue;
-   const i=Math.floor(k/3),dir=k%3;
+   const [priority,k]=heap.pop();const i=Math.floor(k/3),dir=k%3,cost=dist.get(k);if(priority!==cost+heuristic(i))continue;
    if(targets.has(i)){finish=k;break;}
    const a=point(i);
    for(const [j,d,len] of adj(i)){const b=point(j);let penalty=0;for(const [c,e] of existing){if(intersects(a,b,c,e))penalty+=95;else if(a.x===b.x&&c.x===e.x&&a.x===c.x&&Math.min(Math.max(a.y,b.y),Math.max(c.y,e.y))>Math.max(Math.min(a.y,b.y),Math.min(c.y,e.y)))penalty+=28;else if(a.y===b.y&&c.y===e.y&&a.y===c.y&&Math.min(Math.max(a.x,b.x),Math.max(c.x,e.x))>Math.max(Math.min(a.x,b.x),Math.min(c.x,e.x)))penalty+=28;}
-    const nk=j*3+d,nc=cost+len+(dir===d?0:32)+penalty;if(nc<(dist.get(nk)??Infinity)){dist.set(nk,nc);prev.set(nk,k);heap.push([nc,nk]);}}
+    const nk=j*3+d,nc=cost+len+(dir===d?0:32)+penalty;if(nc<(dist.get(nk)??Infinity)){dist.set(nk,nc);prev.set(nk,k);heap.push([nc+heuristic(j),nk]);}}
   }
   if(finish===null)return null;const tail=targets.get(Math.floor(finish/3)),path=[];let k=finish;while(k!==undefined){path.push(point(Math.floor(k/3)));if(!prev.has(k))break;k=prev.get(k);}const start=orig.get(k);if(!start)return null;
   const points=simplify([start.a,...path.reverse(),tail.a]);
@@ -272,4 +272,9 @@ function additionalSample(kind,lang){
  edges:[{id:'r1',from:'employee',to:'request',type:'relationship',fromCard:'1',toCard:'0..*',label:p('submits','gửi')},{id:'r2',from:'request',to:'decision',type:'relationship',fromCard:'1',toCard:'0..*',label:p('has','có')}]};
  if(kind==='sequence')return {kind,title:p('Purchase request submission','Gửi yêu cầu mua hàng'),nodes:[{id:'employee',type:'participant',label:p('Employee','Nhân viên')},{id:'app',type:'participant',label:p('Application','Ứng dụng')},{id:'budget',type:'participant',label:p('Budget service','Dịch vụ ngân sách')}],edges:[{id:'m1',type:'message',from:'employee',to:'app',label:p('Submit request','Gửi yêu cầu')},{id:'m2',type:'message',from:'app',to:'budget',label:p('Check budget','Kiểm tra ngân sách')},{id:'m3',type:'reply',from:'budget',to:'app',label:p('Budget result','Kết quả ngân sách')},{id:'m4',type:'reply',from:'app',to:'employee',label:p('Submission result','Kết quả gửi')}]};
  const b=sampleDiagram('bpmn',lang);return {...b,kind:'activity',title:p('Purchase approval activity','Hoạt động duyệt mua hàng')};
+}
+
+// The same deterministic renderer also runs in a dedicated browser worker.
+if(typeof WorkerGlobalScope!=='undefined'&&globalThis instanceof WorkerGlobalScope){
+ globalThis.onmessage=({data})=>{try{const result=layoutDiagram(data.model,{draft:true});globalThis.postMessage({result,svg:result.layout?renderSvg(data.model,result):''});}catch(e){globalThis.postMessage({error:e.message});}};
 }
