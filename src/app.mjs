@@ -8,7 +8,7 @@ const $=id=>document.getElementById(id);
 const KEY='requirement-studio:v1';
 let w=empty('Untitled workspace'), view='register', query='', typeFilter='', statusFilter='', editing=null, storageReady=true;
 function notice(message=''){ $('notice').textContent=t(message); }
-let cloud=false, revision=0, busy=false, projectId='default', projects=[];
+let cloud=false, publicMode=false, revision=0, busy=false, projectId='default', projects=[];
 const PROJECTS='requirement-studio:projects:v1';
 const localKey=()=>projectId==='default'?KEY:KEY+':'+projectId;
 const projectUrl=()=>'/api/workspace?project='+encodeURIComponent(projectId);
@@ -23,7 +23,7 @@ async function api(method='GET',body,path=projectUrl()){
 try {
  const initial=await api();
  if(initial.mode==='cloud'){
-  cloud=true;$('logout').hidden=false;w=upgrade(validateWorkspace(initial.workspace));revision=initial.revision;projects=(await api('GET',undefined,'/api/projects')).projects;
+  cloud=true;publicMode=initial.authRequired===false;$('logout').hidden=publicMode;w=upgrade(validateWorkspace(initial.workspace));revision=initial.revision;projects=(await api('GET',undefined,'/api/projects')).projects;
   document.querySelector('.sidefoot').textContent='Cloud workspace · Neon PostgreSQL';
  } else if(initial.mode==='local'){
   try{const raw=localStorage.getItem(KEY);if(raw)w=upgrade(validateWorkspace(JSON.parse(raw)));projects=readLocalProjects();projects=projects.map(p=>p.id==='default'?{...p,name:w.name}:p);}
@@ -107,6 +107,7 @@ function report(){
 function markdown(){const safe=s=>String(s).replace(/[\\`*_{}\[\]<>#|]/g,'\\$&');return '# '+safe(w.name)+' — Requirements specification\n\n'+w.items.filter(x=>x.status==='Approved').map(x=>'## '+x.id+' — '+safe(x.title)+'\n\n'+safe(x.description)+'\n\nOwner: '+safe(x.owner)+'  \nPriority: '+x.priority+'  \nVersion: '+x.version+'  \nSource: '+safe(x.sourceRef)+'  \nUpstream: '+x.parents.join(', ')+'  \nVerification: '+safe(x.verification)).join('\n\n');}
 function render(){
  translateStatic(cloud);$('logout').textContent=t('Sign out');
+ if(publicMode){const foot=document.querySelector('.sidefoot');foot.textContent=language()==='vi'?'Công khai — mọi người đều có thể đọc và sửa dữ liệu.':'Public — anyone can read and edit data.';foot.classList.add('error');}
  const handlers={register,trace,quality,history,report,analysis:analysisView};
  if(handlers[view])handlers[view]();
  else if(view==='diagrams')diagramView(w,{heading,node,table,button,select,projectId,commit:async op=>{try{await commit(governance(w,op),{operation:op});notice('Saved.');return true;}catch(e){notice(e.message);return false;}}});
