@@ -9,8 +9,8 @@ const root=new URL('.',import.meta.url);
 const files={'/':'index.html','/index.html':'index.html','/src/app.mjs':'src/app.mjs','/src/core.mjs':'src/core.mjs','/src/i18n.mjs':'src/i18n.mjs','/src/professional.mjs':'src/professional.mjs','/src/export.mjs':'src/export.mjs','/src/diagram.mjs':'src/diagram.mjs','/src/diagram-ui.mjs':'src/diagram-ui.mjs','/src/styles.css':'src/styles.css','/login.html':'login.html','/src/login.mjs':'src/login.mjs','/src/analysis-tools.mjs':'src/analysis-tools.mjs'};
 const mime={html:'text/html; charset=utf-8',mjs:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 const MAX=10*1024*1024;
-export function buildServer({store=null,user='',password='',origin='',sessionMode=false}={}){
- const failures=new Map(),sessions=sessionMode?createSessions(user,password):null;
+export function buildServer({store=null,user='',password='',origin='',sessionMode=false,publicMode=false}={}){
+ const failures=new Map(),sessions=sessionMode&&!publicMode?createSessions(user,password):null;
  return createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost'),path=url.pathname,project=url.searchParams.get('project')||'default';
   const headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"};
@@ -40,7 +40,7 @@ export function buildServer({store=null,user='',password='',origin='',sessionMod
      return json(401,{error:'Authentication required.'});
     }
    }
-   if(store&&!sessions){
+   if(store&&!sessions&&!publicMode){
     const ip=req.socket.remoteAddress||'unknown',now=Date.now();
     // Bounded global fallback because reverse proxy addresses may be shared.
     for(const [key,v] of failures)if(v.until<=now)failures.delete(key);
@@ -57,7 +57,7 @@ export function buildServer({store=null,user='',password='',origin='',sessionMod
     if(req.method==='GET'){
      if(!store)return json(200,{mode:'local'});
      const current=await store.read(project);
-     return current?json(200,{mode:'cloud',...current}):json(404,{error:'Project not found.'});
+     return current?json(200,{mode:'cloud',...current,authRequired:!publicMode}):json(404,{error:'Project not found.'});
     }
     if(!store||!(path==='/api/projects'?req.method==='POST':req.method==='PUT'))return json(405,{error:'Method not allowed.'});
     if(!allowedWrite(req.headers,origin))return json(403,{error:'Invalid request origin or content type.'});
@@ -94,11 +94,14 @@ export function buildServer({store=null,user='',password='',origin='',sessionMod
 export async function start(){
  const cloud=Boolean(process.env.DATABASE_URL)||process.env.NODE_ENV==='production'||process.env.RENDER==='true';
  let store=null,user='',password='',origin='';
+ const authMode=process.env.AUTH_MODE??'password';
+ if(!['password','none'].includes(authMode))throw new Error('CONFIG_AUTH_MODE_INVALID');
+ const publicMode=cloud&&authMode==='none';
  if(cloud){
   user=process.env.APP_USERNAME||'owner';password=process.env.APP_PASSWORD||'';
   if(!process.env.DATABASE_URL?.trim())throw new Error('CONFIG_DATABASE_URL_MISSING');
-  if(password.length<24||password.length>512)throw new Error('CONFIG_APP_PASSWORD_LENGTH');
-  if(user.includes(':')||user.length>128)throw new Error('CONFIG_APP_USERNAME_INVALID');
+  if(!publicMode&&(password.length<24||password.length>512))throw new Error('CONFIG_APP_PASSWORD_LENGTH');
+  if(!publicMode&&(user.includes(':')||user.length>128))throw new Error('CONFIG_APP_USERNAME_INVALID');
   let db;
   try{db=new URL(process.env.DATABASE_URL.trim());}catch{throw new Error('CONFIG_DATABASE_URL_INVALID');}
   if(!['postgres:','postgresql:'].includes(db.protocol)||!db.hostname||!db.username||db.pathname.length<2)throw new Error('CONFIG_DATABASE_URL_INVALID');
@@ -106,6 +109,7 @@ export async function start(){
   try{u=new URL(process.env.APP_ORIGIN||process.env.RENDER_EXTERNAL_URL||'');}catch{throw new Error('CONFIG_APP_ORIGIN_INVALID');}
   if(u.protocol!=='https:'||u.username||u.password)throw new Error('CONFIG_APP_ORIGIN_INVALID');
   origin=u.origin;
+  if(publicMode)console.warn('PUBLIC MODE: anonymous visitors can read and change all workspaces. Use synthetic or non-sensitive data only.');
   console.log('Cloud configuration validated; connecting to PostgreSQL.');
   try{store=await createStore(process.env.DATABASE_URL.trim());}catch(e){
    const known=new Set(['28P01','28000','3D000','42501','53300','57P03','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','ECONNRESET','CERT_HAS_EXPIRED','SELF_SIGNED_CERT_IN_CHAIN','UNABLE_TO_VERIFY_LEAF_SIGNATURE','ERR_TLS_CERT_ALTNAME_INVALID','ERR_MODULE_NOT_FOUND']);
@@ -114,7 +118,7 @@ export async function start(){
   }
   console.log('PostgreSQL initialization complete.');
  }
- const server=buildServer({store,user,password,origin,sessionMode:cloud});
+ const server=buildServer({store,user,password,origin,sessionMode:cloud&&!publicMode,publicMode});
  const port=Number(process.env.PORT||4173);
  server.listen(port,cloud?'0.0.0.0':'127.0.0.1',()=>console.log('Requirement Studio listening on port '+port+' ('+(cloud?'cloud':'local')+')'));
  for(const sig of ['SIGINT','SIGTERM'])process.once(sig,()=>{server.close(async()=>{if(store)await store.close();process.exit(0);});});
