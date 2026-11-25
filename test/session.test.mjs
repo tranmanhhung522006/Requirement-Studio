@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {createSessions} from '../src/session.mjs';
+test('session issues secure cookie and logout revokes it',async()=>{const s=createSessions('owner','test-password');assert.equal((await s.login('owner','bad')).status,401);const a=await s.login('owner','test-password');assert.equal(a.status,200);assert.match(a.cookie,/HttpOnly/);assert.match(a.cookie,/Secure/);assert.equal(s.valid(a.cookie),true);s.revoke(a.cookie);assert.equal(s.valid(a.cookie),false);});

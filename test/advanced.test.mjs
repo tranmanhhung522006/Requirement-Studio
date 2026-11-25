@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {sampleDiagram,layoutDiagram,renderSvg} from '../src/diagram.mjs';import {rice,ice} from '../src/analysis-tools.mjs';
+for(const kind of ['erd','sequence','activity'])for(const lang of ['en','vi'])test(kind+' '+lang+' renders',()=>{const m=sampleDiagram(kind,lang),r=layoutDiagram(m);assert.ok(r.layout);assert.equal(r.findings.filter(f=>f.level==='error').length,0);assert.ok(renderSvg(m,r).startsWith('<svg'));});
+test('RICE and ICE reject invalid values',()=>{assert.equal(rice({reach:100,impact:2,confidence:80,effort:4}),40);assert.equal(ice({impact:3,confidence:4,ease:5}),60);assert.throws(()=>rice({reach:1,impact:2,confidence:80,effort:0}));});

@@ -1,0 +1,138 @@
+{
+  "kind": "uml",
+  "title": "Purchase approval system",
+  "nodes": [
+    {
+      "id": "employee",
+      "type": "actor",
+      "label": "Employee"
+    },
+    {
+      "id": "manager",
+      "type": "actor",
+      "label": "Manager"
+    },
+    {
+      "id": "budget",
+      "type": "actor",
+      "label": "Budget system",
+      "side": "right"
+    },
+    {
+      "id": "create",
+      "type": "usecase",
+      "label": "Create purchase request"
+    },
+    {
+      "id": "submit",
+      "type": "usecase",
+      "label": "Submit purchase request"
+    },
+    {
+      "id": "track",
+      "type": "usecase",
+      "label": "Track status"
+    },
+    {
+      "id": "review",
+      "type": "usecase",
+      "label": "Review request"
+    },
+    {
+      "id": "approve",
+      "type": "usecase",
+      "label": "Approve request"
+    },
+    {
+      "id": "reject",
+      "type": "usecase",
+      "label": "Reject request"
+    },
+    {
+      "id": "check",
+      "type": "usecase",
+      "label": "Validate budget",
+      "row": 1
+    },
+    {
+      "id": "more",
+      "type": "usecase",
+      "label": "Request more information",
+      "row": 3
+    },
+    {
+      "id": "audit",
+      "type": "usecase",
+      "label": "Record decision",
+      "row": 4
+    }
+  ],
+  "edges": [
+    {
+      "id": "a1",
+      "from": "employee",
+      "to": "create",
+      "type": "association"
+    },
+    {
+      "id": "a2",
+      "from": "employee",
+      "to": "submit",
+      "type": "association"
+    },
+    {
+      "id": "a3",
+      "from": "employee",
+      "to": "track",
+      "type": "association"
+    },
+    {
+      "id": "a4",
+      "from": "manager",
+      "to": "review",
+      "type": "association"
+    },
+    {
+      "id": "a5",
+      "from": "manager",
+      "to": "approve",
+      "type": "association"
+    },
+    {
+      "id": "a6",
+      "from": "manager",
+      "to": "reject",
+      "type": "association"
+    },
+    {
+      "id": "a7",
+      "from": "budget",
+      "to": "check",
+      "type": "association"
+    },
+    {
+      "id": "i1",
+      "from": "submit",
+      "to": "check",
+      "type": "include"
+    },
+    {
+      "id": "i2",
+      "from": "approve",
+      "to": "audit",
+      "type": "include"
+    },
+    {
+      "id": "i3",
+      "from": "reject",
+      "to": "audit",
+      "type": "include"
+    },
+    {
+      "id": "x1",
+      "from": "more",
+      "to": "review",
+      "type": "extend"
+    }
+  ]
+}

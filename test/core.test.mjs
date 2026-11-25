@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {empty,newItem,saveItem,inspect,descendants,matrix,csv,demo,validateWorkspace} from '../src/core.mjs';
+test('new workspace has stable next IDs',()=>{const w=empty('A');assert.equal(newItem(w,'FR').id,'FR-001');});
+test('unverified source blocks approval',()=>{const w=empty('A');assert.throws(()=>saveItem(w,{...newItem(w,'BO'),status:'Approved'}),/confirmed source/);});
+test('draft is saved with audit snapshot',()=>{const w=empty('A'),x=newItem(w,'BO'),next=saveItem(w,x);assert.equal(next.history.length,1);assert.equal(next.items[0].version,1);assert.equal(w.items.length,0);});
+test('sample has no deterministic errors',()=>{const w=demo();assert.equal(w.items.flatMap(x=>inspect(w,x)).filter(i=>i.level==='error').length,0);assert.equal(matrix(w)[0].covered,true);});
+test('upstream change resets approved downstream and creates history',()=>{const w=demo(),bo=w.items[0];const next=saveItem(w,{...bo,status:'In review',title:'Changed goal'});assert.equal(descendants(next,bo.id).length,5);assert.ok(next.items.every(x=>x.status==='In review'));assert.equal(next.history.length,12);assert.equal(matrix(next)[0].covered,false);});
+test('approved artifacts cannot be silently edited',()=>{const w=demo();assert.throws(()=>saveItem(w,{...w.items[0],title:'Changed'}),/Return approved/);});
+test('reject invalid relationship on import',()=>{const w=demo();w.items[0].parents=[w.items[5].id];assert.throws(()=>validateWorkspace(w),/Invalid upstream/);});
+test('duplicate IDs rejected',()=>{const w=demo();w.items.push(w.items[0]);assert.throws(()=>validateWorkspace(w),/duplicate ID/);});
+test('CSV escapes quotes and formula prefixes',()=>{assert.equal(csv([['a"b','=1+1']]),'"a""b","\'=1+1"');});
+test('NFR without measurable threshold is flagged',()=>{const w=empty('A');const x={...newItem(w,'NFR'),description:'The system should be fast'};assert.ok(inspect(w,x).some(i=>i.code==='R011'));});

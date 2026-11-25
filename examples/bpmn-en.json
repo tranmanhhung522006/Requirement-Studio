@@ -1,0 +1,189 @@
+{
+  "kind": "bpmn",
+  "title": "Purchase request approval",
+  "lanes": [
+    {
+      "id": "employee",
+      "label": "Employee"
+    },
+    {
+      "id": "system",
+      "label": "System"
+    },
+    {
+      "id": "manager",
+      "label": "Manager"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Request needed",
+      "lane": "employee",
+      "row": 0
+    },
+    {
+      "id": "create",
+      "type": "task",
+      "label": "Create purchase request",
+      "lane": "employee",
+      "row": 1
+    },
+    {
+      "id": "submit",
+      "type": "task",
+      "label": "Submit request",
+      "lane": "employee",
+      "row": 2
+    },
+    {
+      "id": "validate",
+      "type": "task",
+      "label": "Validate budget",
+      "lane": "system",
+      "row": 2
+    },
+    {
+      "id": "budget",
+      "type": "exclusive",
+      "label": "Budget available?",
+      "lane": "system",
+      "row": 3
+    },
+    {
+      "id": "notify",
+      "type": "task",
+      "label": "Notify insufficient budget",
+      "lane": "employee",
+      "row": 3
+    },
+    {
+      "id": "stop",
+      "type": "end",
+      "label": "Not submitted",
+      "lane": "employee",
+      "row": 4
+    },
+    {
+      "id": "review",
+      "type": "task",
+      "label": "Review purchase request",
+      "lane": "manager",
+      "row": 4
+    },
+    {
+      "id": "decision",
+      "type": "exclusive",
+      "label": "Approved?",
+      "lane": "manager",
+      "row": 5
+    },
+    {
+      "id": "approved",
+      "type": "task",
+      "label": "Record approval",
+      "lane": "system",
+      "row": 5
+    },
+    {
+      "id": "rejected",
+      "type": "task",
+      "label": "Record rejection",
+      "lane": "system",
+      "row": 6
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "label": "Approved",
+      "lane": "employee",
+      "row": 5
+    },
+    {
+      "id": "denied",
+      "type": "end",
+      "label": "Rejected",
+      "lane": "employee",
+      "row": 6
+    }
+  ],
+  "edges": [
+    {
+      "id": "f1",
+      "from": "start",
+      "to": "create",
+      "type": "sequence"
+    },
+    {
+      "id": "f2",
+      "from": "create",
+      "to": "submit",
+      "type": "sequence"
+    },
+    {
+      "id": "f3",
+      "from": "submit",
+      "to": "validate",
+      "type": "sequence"
+    },
+    {
+      "id": "f4",
+      "from": "validate",
+      "to": "budget",
+      "type": "sequence"
+    },
+    {
+      "id": "f5",
+      "from": "budget",
+      "to": "notify",
+      "type": "sequence",
+      "label": "No"
+    },
+    {
+      "id": "f6",
+      "from": "notify",
+      "to": "stop",
+      "type": "sequence"
+    },
+    {
+      "id": "f7",
+      "from": "budget",
+      "to": "review",
+      "type": "sequence",
+      "label": "Yes"
+    },
+    {
+      "id": "f8",
+      "from": "review",
+      "to": "decision",
+      "type": "sequence"
+    },
+    {
+      "id": "f9",
+      "from": "decision",
+      "to": "approved",
+      "type": "sequence",
+      "label": "Yes"
+    },
+    {
+      "id": "f10",
+      "from": "decision",
+      "to": "rejected",
+      "type": "sequence",
+      "label": "No"
+    },
+    {
+      "id": "f11",
+      "from": "approved",
+      "to": "done",
+      "type": "sequence"
+    },
+    {
+      "id": "f12",
+      "from": "rejected",
+      "to": "denied",
+      "type": "sequence"
+    }
+  ]
+}

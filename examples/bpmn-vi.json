@@ -1,0 +1,189 @@
+{
+  "kind": "bpmn",
+  "title": "Quy trình phê duyệt mua hàng",
+  "lanes": [
+    {
+      "id": "employee",
+      "label": "Nhân viên"
+    },
+    {
+      "id": "system",
+      "label": "Hệ thống"
+    },
+    {
+      "id": "manager",
+      "label": "Quản lý"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Phát sinh nhu cầu",
+      "lane": "employee",
+      "row": 0
+    },
+    {
+      "id": "create",
+      "type": "task",
+      "label": "Tạo yêu cầu mua hàng",
+      "lane": "employee",
+      "row": 1
+    },
+    {
+      "id": "submit",
+      "type": "task",
+      "label": "Gửi yêu cầu",
+      "lane": "employee",
+      "row": 2
+    },
+    {
+      "id": "validate",
+      "type": "task",
+      "label": "Kiểm tra ngân sách",
+      "lane": "system",
+      "row": 2
+    },
+    {
+      "id": "budget",
+      "type": "exclusive",
+      "label": "Đủ ngân sách?",
+      "lane": "system",
+      "row": 3
+    },
+    {
+      "id": "notify",
+      "type": "task",
+      "label": "Thông báo thiếu ngân sách",
+      "lane": "employee",
+      "row": 3
+    },
+    {
+      "id": "stop",
+      "type": "end",
+      "label": "Chưa gửi duyệt",
+      "lane": "employee",
+      "row": 4
+    },
+    {
+      "id": "review",
+      "type": "task",
+      "label": "Xem xét yêu cầu",
+      "lane": "manager",
+      "row": 4
+    },
+    {
+      "id": "decision",
+      "type": "exclusive",
+      "label": "Được duyệt?",
+      "lane": "manager",
+      "row": 5
+    },
+    {
+      "id": "approved",
+      "type": "task",
+      "label": "Ghi nhận phê duyệt",
+      "lane": "system",
+      "row": 5
+    },
+    {
+      "id": "rejected",
+      "type": "task",
+      "label": "Ghi nhận từ chối",
+      "lane": "system",
+      "row": 6
+    },
+    {
+      "id": "done",
+      "type": "end",
+      "label": "Đã duyệt",
+      "lane": "employee",
+      "row": 5
+    },
+    {
+      "id": "denied",
+      "type": "end",
+      "label": "Đã từ chối",
+      "lane": "employee",
+      "row": 6
+    }
+  ],
+  "edges": [
+    {
+      "id": "f1",
+      "from": "start",
+      "to": "create",
+      "type": "sequence"
+    },
+    {
+      "id": "f2",
+      "from": "create",
+      "to": "submit",
+      "type": "sequence"
+    },
+    {
+      "id": "f3",
+      "from": "submit",
+      "to": "validate",
+      "type": "sequence"
+    },
+    {
+      "id": "f4",
+      "from": "validate",
+      "to": "budget",
+      "type": "sequence"
+    },
+    {
+      "id": "f5",
+      "from": "budget",
+      "to": "notify",
+      "type": "sequence",
+      "label": "Không"
+    },
+    {
+      "id": "f6",
+      "from": "notify",
+      "to": "stop",
+      "type": "sequence"
+    },
+    {
+      "id": "f7",
+      "from": "budget",
+      "to": "review",
+      "type": "sequence",
+      "label": "Có"
+    },
+    {
+      "id": "f8",
+      "from": "review",
+      "to": "decision",
+      "type": "sequence"
+    },
+    {
+      "id": "f9",
+      "from": "decision",
+      "to": "approved",
+      "type": "sequence",
+      "label": "Có"
+    },
+    {
+      "id": "f10",
+      "from": "decision",
+      "to": "rejected",
+      "type": "sequence",
+      "label": "Không"
+    },
+    {
+      "id": "f11",
+      "from": "approved",
+      "to": "done",
+      "type": "sequence"
+    },
+    {
+      "id": "f12",
+      "from": "rejected",
+      "to": "denied",
+      "type": "sequence"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {demo,empty,governance,compareVersions,matrix,inspect,newItem,saveItem} from '../src/core.mjs';
+import {applyOperation} from '../src/cloud.mjs';
+import {buildDocx,buildXlsx} from '../src/export.mjs';
+test('baseline preserves previous approved versions',()=>{const w=demo(),b=governance(w,{kind:'baseline',name:'Release 1'});const n=saveItem(b,{...b.items[0],status:'In review'});assert.equal(n.baselines[0].items[0].version,1);assert.equal(n.items[0].version,2);});
+test('change approval reopens target and invalidates descendants',()=>{let w=demo();const target=w.items[0].id;assert.throws(()=>applyOperation(w,{kind:'save',record:{...w.items[0],status:'In review'}}),/change request/);w=governance(w,{kind:'change',target,reason:'New policy',impact:'Review downstream'});const id=w.changes[0].id;w=governance(w,{kind:'decision',id,status:'Accepted'});w=governance(w,{kind:'implement',id});assert.equal(w.items[0].status,'In review');assert.ok(w.items.every(x=>x.status==='In review'));assert.ok(compareVersions(w,target,1,2).some(x=>x.field==='status'));});
+test('execution evidence is version specific',()=>{let w=demo();const target=w.items.find(x=>x.type==='TC').id;w=governance(w,{kind:'run',target,result:'Pass',evidence:'Synthetic execution'});assert.deepEqual(matrix(w)[0].passed,[target]);w=saveItem(w,{...w.items[0],status:'In review'});assert.deepEqual(matrix(w)[0].passed,[]);});
+test('structured fields and placeholder checks',()=>{const w=empty('A'),x={...newItem(w,'NFR'),description:'TBD'};assert.ok(inspect(w,x).some(i=>i.code==='R014'));assert.ok(inspect(w,x).some(i=>i.code==='R020'));});
+test('Office exports contain ZIP signature',async()=>{for(const blob of [buildDocx(demo(),'vi'),buildXlsx(demo(),'en')]){const bytes=new Uint8Array(await blob.arrayBuffer());assert.deepEqual([...bytes.slice(0,4)],[80,75,3,4]);assert.ok(bytes.length>1000);}});
