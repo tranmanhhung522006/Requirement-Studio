@@ -184,8 +184,9 @@ function labelBox(edge,layout,labels,all){
   return {...r,lines};
  }return null;
 }
-export function layoutDiagram(m){
- const findings=validateDiagram(m);if(findings.some(f=>f.level==='error'))return {findings,layout:null};
+export function layoutDiagram(m,{draft=false}={}){
+ const findings=validateDiagram(m);const incomplete=new Set(['D012','D013','D014','D015','D020','D025']);
+ if(findings.some(f=>f.level==='error'&&(!draft||!incomplete.has(f.code))))return {findings,layout:null};
  if(m.kind==='sequence')return sequenceLayout(m,findings);
  const layout=place(m),route=router(layout),byId=new Map(layout.nodes.map(n=>[n.id,n])),edges=[];
  // Process primary control flows/associations before secondary dependencies.
