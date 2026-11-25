@@ -26,3 +26,14 @@ test('HTTP cloud auth, persistence contract and conflicts',async t=>{
  assert.equal((await (await get()).json()).workspace.name,'B');
  assert.equal((await put(0)).status,409);
 });
+
+test('explicit public mode permits anonymous workspace access but retains origin checks',async t=>{
+ const store={read:async()=>({workspace:empty('Demo'),revision:0}),write:async()=>1,health:async()=>{}};
+ const server=buildServer({store,origin,publicMode:true});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ t.after(()=>{server.closeAllConnections();return new Promise(resolve=>server.close(resolve));});
+ const base='http://127.0.0.1:'+server.address().port;
+ assert.equal((await fetch(base+'/')).status,200);
+ const response=await fetch(base+'/api/workspace');assert.equal(response.status,200);assert.equal((await response.json()).authRequired,false);
+ assert.equal((await fetch(base+'/api/workspace',{method:'PUT',headers:{Origin:'https://evil.test','X-Workspace-Request':'1','Content-Type':'application/json'},body:JSON.stringify({workspace:empty('B'),revision:0})})).status,403);
+});
