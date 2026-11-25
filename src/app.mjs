@@ -6,7 +6,7 @@ import {exportDocument} from './export.mjs';
 import {upgrade,governance,FIELDS,latestRun,compareVersions,TYPES,PARENTS,STATUS,SOURCES,PRIORITIES,empty,validateWorkspace,newItem,saveItem,inspect,issues,matrix,descendants,csv,demo} from './core.mjs';
 const $=id=>document.getElementById(id);
 const KEY='requirement-studio:v1';
-let w=empty('Untitled workspace'), view='register', query='', typeFilter='', statusFilter='', editing=null, storageReady=true;
+let w=empty('Untitled workspace'), view='home', query='', typeFilter='', statusFilter='', editing=null, storageReady=true;
 function notice(message=''){ $('notice').textContent=t(message); }
 let cloud=false, publicMode=false, revision=0, busy=false, projectId='default', projects=[];
 const PROJECTS='requirement-studio:projects:v1';
@@ -62,6 +62,19 @@ function status(x){return node('span',t(x.status),'status '+x.status);}
 function download(name,text,mime){const url=URL.createObjectURL(new Blob([text],{type:mime}));const a=node('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function exportRegister(){download('requirements.csv','\uFEFF'+csv([['ID','Type','Title','Specification','Owner','Source','Source reference','Verification','Priority','Status','Upstream','Version'],...w.items.map(x=>[x.id,TYPES[x.type],x.title,x.description,x.owner,x.source,x.sourceRef,x.verification,x.priority,x.status,x.parents.join('; '),x.version])]),'text/csv;charset=utf-8');}
 function exportMatrix(){download('traceability.csv','\uFEFF'+csv([['ID','Title','Upstream','Stories','Criteria','Tests','Approved AC and TC linked'],...matrix(w).map(x=>[x.id,x.title,x.upstream.join('; '),x.stories.join('; '),x.criteria.join('; '),x.tests.join('; '),x.covered?'Yes':'No'])]),'text/csv;charset=utf-8');}
+function navigate(next){view=next;document.querySelectorAll('[data-view]').forEach(y=>{if(y.dataset.view===next){y.setAttribute('aria-current','page');const group=y.closest('details');if(group)group.open=true;}else y.removeAttribute('aria-current');});render();}
+function overview(){
+ const vi=language()==='vi',tr=(en,v)=>vi?v:en,c=heading('Overview',tr('Start anywhere. Follow the suggested steps when building a new project.','Có thể bắt đầu ở bất kỳ bước nào. Làm theo các bước gợi ý khi xây dựng dự án mới.'));
+ const strip=node('div','','overview-summary');for(const [label,count] of [[tr('Requirements','Yêu cầu'),w.items.length],[tr('Diagrams','Sơ đồ'),w.diagrams.length],[tr('Approved','Đã duyệt'),w.items.filter(x=>x.status==='Approved').length]]){const card=node('div');card.append(node('strong',String(count)),node('span',label));strip.append(card);}c.append(strip);
+ const steps=node('div','','workflow-cards');const entries=[
+ ['01','scope',tr('Define scope','Xác định phạm vi'),tr('Describe the business problem, scope and stakeholders.','Mô tả bài toán, phạm vi và các bên liên quan.')],
+ ['02','register',tr('Write requirements','Viết yêu cầu'),tr('Add requirements, use cases and acceptance criteria.','Thêm yêu cầu, use case và tiêu chí chấp nhận.')],
+ ['03','diagrams',tr('Draw diagrams','Vẽ sơ đồ'),tr('Create a use case, BPMN, ERD, sequence or activity diagram.','Tạo sơ đồ Use Case, BPMN, ERD, Sequence hoặc Activity.')],
+ ['04','quality',tr('Review quality','Kiểm tra chất lượng'),tr('Find missing information and review requirements.','Tìm thông tin thiếu và rà soát yêu cầu.')],
+ ['05','testing',tr('Validate & test','Xác minh và kiểm thử'),tr('Run test cases and record results.','Thực hiện test case và ghi nhận kết quả.')],
+ ['06','report',tr('Export specification','Xuất tài liệu'),tr('Generate specification documents for delivery.','Xuất tài liệu đặc tả để bàn giao.')]];
+ for(const [num,key,title,desc] of entries){const b=node('button','','workflow-card');b.type='button';b.append(node('small',num),node('strong',title),node('span',desc),node('span',tr('Open →','Mở →'),'workflow-link'));b.addEventListener('click',()=>navigate(key));steps.append(b);}c.append(steps);
+}
 function register(){
  const c=heading('Requirements','Maintain a structured register of business needs, specifications and verification artifacts.');
  const active=w.items.filter(x=>x.status!=='Retired'),m=matrix(w),q=issues(w);
@@ -108,7 +121,7 @@ function markdown(){const safe=s=>String(s).replace(/[\\`*_{}\[\]<>#|]/g,'\\$&')
 function render(){
  translateStatic(cloud);$('logout').textContent=t('Sign out');
  if(publicMode){const foot=document.querySelector('.sidefoot');foot.textContent=language()==='vi'?'Công khai — mọi người đều có thể đọc và sửa dữ liệu.':'Public — anyone can read and edit data.';foot.classList.add('error');}
- const handlers={register,trace,quality,history,report,analysis:analysisView};
+ const handlers={home:overview,register,trace,quality,history,report,analysis:analysisView};
  if(handlers[view])handlers[view]();
  else if(view==='diagrams')diagramView(w,{heading,node,table,button,select,projectId,commit:async op=>{try{await commit(governance(w,op),{operation:op});notice('Saved.');return true;}catch(e){notice(e.message);return false;}}});
  else professionalView(view,w,{heading,node,table,button,select,refs,ref,commit:async op=>run(async()=>{await commit(governance(w,op),{operation:op});notice(t('Saved.'));})});
@@ -165,7 +178,7 @@ function openEditor(id,type='FR'){
 }
 $('form').addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(e.target);const x={...editing};for(const key of ['title','description','owner','priority','source','sourceRef','verification','status'])x[key]=String(d.get(key)||'').trim();x.parents=d.getAll('parents');x.details=Object.fromEntries((FIELDS[x.type]||[]).map(([key])=>[key,String(d.get('detail:'+key)||'').trim()]));try{if(editing.status==='Approved')throw Error(t('Approved artifacts must be reopened through Change control.'));await commit(saveItem(w,x),{operation:{kind:'save',record:x}});$('editor').close();notice(x.id+' saved.');}catch(err){$('form-error').textContent=err.message;}});
 for(const id of ['close','cancel'])$(id).addEventListener('click',()=>$('editor').close());
-document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(y=>y.removeAttribute('aria-current'));b.setAttribute('aria-current','page');render();}));
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.view)));
 $('project').value=w.name;
 $('project').addEventListener('change',()=>run(async()=>{const name=$('project').value.trim();if(!name)throw Error('Workspace name cannot be empty.');await commit({...w,name},{operation:{kind:'rename',name}});notice('Workspace renamed.');}));
 $('sample').addEventListener('click',()=>run(async()=>{if(!confirm(t('Replace this workspace with synthetic sample data? Export a backup first if needed.')))return;await commit(demo(),{replace:true});notice('Synthetic sample loaded. This is not real stakeholder evidence.');}));
