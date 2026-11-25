@@ -96,14 +96,27 @@ export async function start(){
  let store=null,user='',password='',origin='';
  if(cloud){
   user=process.env.APP_USERNAME||'owner';password=process.env.APP_PASSWORD||'';
-  if(!process.env.DATABASE_URL||password.length<24||user.includes(':'))throw Error('Cloud mode requires DATABASE_URL and APP_PASSWORD (24+ characters).');
-  const u=new URL(process.env.APP_ORIGIN||process.env.RENDER_EXTERNAL_URL||'');
-  if(u.protocol!=='https:')throw Error('Cloud mode requires an HTTPS origin.');
-  origin=u.origin;store=await createStore(process.env.DATABASE_URL);
+  if(!process.env.DATABASE_URL?.trim())throw new Error('CONFIG_DATABASE_URL_MISSING');
+  if(password.length<24||password.length>512)throw new Error('CONFIG_APP_PASSWORD_LENGTH');
+  if(user.includes(':')||user.length>128)throw new Error('CONFIG_APP_USERNAME_INVALID');
+  let db;
+  try{db=new URL(process.env.DATABASE_URL.trim());}catch{throw new Error('CONFIG_DATABASE_URL_INVALID');}
+  if(!['postgres:','postgresql:'].includes(db.protocol)||!db.hostname||!db.username||db.pathname.length<2)throw new Error('CONFIG_DATABASE_URL_INVALID');
+  let u;
+  try{u=new URL(process.env.APP_ORIGIN||process.env.RENDER_EXTERNAL_URL||'');}catch{throw new Error('CONFIG_APP_ORIGIN_INVALID');}
+  if(u.protocol!=='https:'||u.username||u.password)throw new Error('CONFIG_APP_ORIGIN_INVALID');
+  origin=u.origin;
+  console.log('Cloud configuration validated; connecting to PostgreSQL.');
+  try{store=await createStore(process.env.DATABASE_URL.trim());}catch(e){
+   const known=new Set(['28P01','28000','3D000','42501','53300','57P03','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','ECONNRESET','CERT_HAS_EXPIRED','SELF_SIGNED_CERT_IN_CHAIN','UNABLE_TO_VERIFY_LEAF_SIGNATURE','ERR_TLS_CERT_ALTNAME_INVALID','ERR_MODULE_NOT_FOUND']);
+   const code=known.has(e?.code)?e.code:'UNKNOWN';
+   throw new Error('DATABASE_STARTUP_'+code);
+  }
+  console.log('PostgreSQL initialization complete.');
  }
  const server=buildServer({store,user,password,origin,sessionMode:cloud});
  const port=Number(process.env.PORT||4173);
  server.listen(port,cloud?'0.0.0.0':'127.0.0.1',()=>console.log('Requirement Studio listening on port '+port+' ('+(cloud?'cloud':'local')+')'));
  for(const sig of ['SIGINT','SIGTERM'])process.once(sig,()=>{server.close(async()=>{if(store)await store.close();process.exit(0);});});
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))start().catch(e=>{console.error('Startup failed:',e.code||e.name);process.exitCode=1;});
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))start().catch(e=>{const msg=typeof e?.message==='string'&&/^(CONFIG_|DATABASE_STARTUP_)[A-Z0-9_]+$/.test(e.message)?e.message:'UNEXPECTED_STARTUP_ERROR';console.error('Startup failed:',msg);process.exitCode=1;});
