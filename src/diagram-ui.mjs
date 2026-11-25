@@ -8,7 +8,7 @@ const types={uml:[['actor','Actor'],['usecase','Use case']],bpmn:[['start','Star
 const relations={uml:[['association','Association'],['include','Include'],['extend','Extend'],['generalization','Generalization']],bpmn:[['sequence','Sequence flow']],activity:[['sequence','Control flow']],erd:[['relationship','Relationship']],sequence:[['message','Message'],['reply','Reply']]};
 const name=(k,v)=>t((k.find(x=>x[0]===v)||[v,v])[1]);
 const nextId=(arr,prefix)=>{let i=1;while(arr.some(x=>x.id===prefix+i))i++;return prefix+i;};
-const state=new Map();
+const state=new Map();let activePreview=null;
 const tr=(en,vi)=>language()==='vi'?vi:en;
 const kinds=[['uml','Use case (UML)'],['bpmn','BPMN'],['erd','ERD'],['sequence','Sequence'],['activity','Activity']];
 function starter(kind){
@@ -29,13 +29,14 @@ export async function png300(blob){
  while(pos+12<=raw.length){const len=new DataView(raw.buffer,pos,4).getUint32(0),end=pos+12+len;if(end>raw.length)throw Error('Invalid PNG.');const type=String.fromCharCode(...raw.slice(pos+4,pos+8));if(type!=='pHYs')parts.push(raw.slice(pos,end));if(type==='IHDR')parts.push(chunk);pos=end;}
  return new Blob(parts,{type:'image/png'});
 }
-async function exportPng(svg,l,orientation){
+async function exportPng(svg,l,orientation,filename='diagram.png'){
  const landscape=orientation==='landscape',maxW=landscape?3508:2480,maxH=landscape?2480:3508,s=Math.min(maxW/l.width,maxH/l.height);
  const canvas=$('canvas');canvas.width=Math.max(1,Math.round(l.width*s));canvas.height=Math.max(1,Math.round(l.height*s));const ctx=canvas.getContext('2d');if(!ctx)throw Error('PNG export failed.');
  const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
- try{const image=new Image();image.src=url;await image.decode();ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('PNG export failed.');download('diagram.png',await png300(blob),'image/png');}finally{URL.revokeObjectURL(url);}
+ try{const image=new Image();image.src=url;await image.decode();ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('PNG export failed.');download(filename,await png300(blob),'image/png');}finally{URL.revokeObjectURL(url);}
 }
 export function diagramView(w,ui){
+ activePreview?.();
  const {heading,button,table,projectId,commit}=ui;
  const c=heading('Diagram Studio',tr('Create, connect, arrange, then export.','Tạo đối tượng, nối luồng, sắp xếp và xuất sơ đồ.'));
  let s=state.get(projectId);if(!s){s={id:'',model:clone(w.diagrams[0]?.model??starter('uml')),dirty:false,zoom:0.7,fit:true,orientation:'portrait',undo:[],redo:[]};s.id=w.diagrams[0]?.id??'';state.set(projectId,s);}
@@ -62,34 +63,46 @@ export function diagramView(w,ui){
  const metrics=$('p');metrics.className='diagram-counts';const findings=$('div');findings.className='diagram-findings';findings.setAttribute('aria-live','polite');const review=$('details');review.className='diagram-review';const reviewTitle=$('summary',tr('Diagram checks','Kiểm tra sơ đồ'));review.append(reviewTitle,metrics,findings);right.append(review);
  const zoom=list([['fit',tr('Fit to canvas','Vừa khung')],[.25,'25%'],[.4,'40%'],[.55,'55%'],[.7,'70%'],[1,'100%'],[1.3,'130%'],[1.6,'160%']],s.fit?'fit':String(s.zoom));zoom.setAttribute('aria-label',t('Layout zoom'));
  const orient=list([['portrait',t('Portrait')],['landscape',t('Landscape')]],s.orientation);orient.addEventListener('change',()=>s.orientation=orient.value);
- let result=null,svg='',currentSvg=null;
- const svgButton=button('Export SVG',()=>{if(svg&&!blocked())download('diagram.svg',svg,'image/svg+xml;charset=utf-8');});
- const pngButton=button('Export PNG (A4, 300 DPI)',async()=>{if(svg&&!blocked())try{await exportPng(svg,result.layout,s.orientation);}catch(e){err.textContent=t(e.message);}});
- const xmlButton=button('Export BPMN XML',()=>{if(!blocked())download('diagram.bpmn',exportBpmn(s.model,result),'application/xml');});
+ let result=null,svg='',currentSvg=null,worker=null,timer=null,epoch=0,pending=false;
+ activePreview=()=>{clearTimeout(timer);worker?.terminate();worker=null;epoch++;};
+ const fileName=ext=>(s.model.title.replace(/[^\p{L}\p{N} _.-]/gu,'-').trim().slice(0,100)||'diagram')+'.'+ext;
+ const svgButton=button('Export SVG',()=>{if(svg&&!blocked())download(fileName('svg'),svg,'image/svg+xml;charset=utf-8');});
+ const pngButton=button('Export PNG (A4, 300 DPI)',async()=>{if(svg&&!blocked())try{await exportPng(svg,result.layout,s.orientation,fileName('png'));}catch(e){err.textContent=t(e.message);}});
+ const xmlButton=button('Export BPMN XML',()=>{if(!blocked())download(fileName('bpmn'),exportBpmn(s.model,result),'application/xml');});
  const save=button('Save diagram',async()=>{if(blocked())return;save.disabled=true;const wasId=s.id;s.selectAfterSave=wasId?null:s.model;s.dirty=false;const ok=await commit({kind:'diagram-save',id:wasId||undefined,model:s.model});if(!ok){s.selectAfterSave=null;s.dirty=true;save.disabled=false;draft.textContent=t('Draft not saved');}},'primary');
  const remove=button('Delete diagram',async()=>{if(!s.id||!confirm(t('Delete this diagram?')))return;if(await commit({kind:'diagram-remove',id:s.id})){s.id='';s.dirty=false;}});
  if(s.selectAfterSave){const match=[...w.diagrams].reverse().find(d=>JSON.stringify(d.model)===JSON.stringify(s.selectAfterSave)||d.model.title===s.selectAfterSave.title&&d.model.kind===s.selectAfterSave.kind);if(match){s.id=match.id;saved.value=s.id;s.selectAfterSave=null;s.dirty=false;draft.textContent=s.model.title;}}
  // A successful project save triggers synchronous re-render; match before commit via pending content.
  const undo=button(tr('Undo','Hoàn tác'),()=>restore('undo','redo')),redo=button(tr('Redo','Làm lại'),()=>restore('redo','undo'));
  const auto=button(tr('Auto layout','Tự sắp xếp'),()=>{remember(s);for(const n of s.model.nodes){delete n.position;delete n.row;delete n.col;}mark();});
- const exportMenu=$('details');exportMenu.className='diagram-menu';exportMenu.append($('summary',tr('Export','Xuất file')),orient,svgButton,pngButton,xmlButton,button('Download model JSON',()=>download('diagram.json',JSON.stringify(s.model,null,2),'application/json')));
- toolbar.append(undo,redo,auto,zoom,save,exportMenu);
+ const exportMenu=$('details');exportMenu.className='diagram-menu';exportMenu.append($('summary',tr('More formats','Định dạng khác')),orient,xmlButton,button('Download model JSON',()=>download(fileName('json'),JSON.stringify(s.model,null,2),'application/json')));
+ toolbar.append(undo,redo,auto,zoom,save,pngButton,svgButton,exportMenu);
  const hint=$('p');hint.className='diagram-hint';right.insertBefore(hint,canvas);
  function restore(from,to){if(!s[from]?.length)return;(s[to]??=[]).push(clone(s.model));s.model=s[from].pop();s.nodeId='';s.edgeId='';s.from='';title.value=s.model.title;mark();}
  function hintText(){hint.textContent=s.connect?(s.from?tr('Select the destination node.','Chọn đối tượng đích.'):tr('Select the source node.','Chọn đối tượng nguồn.')):tr('Click a shape to edit. Drag to move. Use Connect to link two shapes.','Bấm hình để sửa. Kéo để di chuyển. Dùng Nối để liên kết hai hình.');}
  function historyButtons(){undo.disabled=!s.undo?.length;redo.disabled=!s.redo?.length;hintText();}
 
  left.append(remove);
- function blocked(){return !result?.layout||result.findings.some(f=>f.level==='error')||!svg;}
+ function blocked(){return pending||!result?.layout||result.findings.some(f=>f.level==='error')||!svg;}
  function disableExports(){svg='';for(const b of [svgButton,pngButton,xmlButton,save])b.disabled=true;}
  function setZoom(){if(!currentSvg||!result?.layout)return;if(s.fit)s.zoom=Math.min(1,Math.max(.12,(canvas.clientWidth-12)/result.layout.width),Math.max(.12,570/result.layout.height));currentSvg.setAttribute('width',String(Math.round(result.layout.width*s.zoom)));currentSvg.setAttribute('height',String(Math.round(result.layout.height*s.zoom)));}
  zoom.addEventListener('change',()=>{s.fit=zoom.value==='fit';if(!s.fit)s.zoom=Number(zoom.value);setZoom();});
- function mark(){s.dirty=true;draft.textContent=t('Draft not saved');disableExports();rebuild();historyButtons();render();}
- function render(){
-  err.textContent='';canvas.replaceChildren();findings.replaceChildren();disableExports();currentSvg=null;
+ function mark(rebuildForm=true){s.dirty=true;draft.textContent=t('Draft not saved');disableExports();if(rebuildForm)rebuild();historyButtons();render(rebuildForm?0:180);}
+ function render(delay=0){
+  clearTimeout(timer);worker?.terminate();worker=null;const token=++epoch;pending=true;disableExports();
+  metrics.textContent=tr('Updating preview…','Đang cập nhật sơ đồ…');canvas.setAttribute('aria-busy','true');
+  timer=setTimeout(()=>{
+   if(!canvas.isConnected||token!==epoch)return;
+   const model=clone(s.model),fallback=()=>{try{const result=layoutDiagram(model,{draft:true});paint({result,svg:result.layout?renderSvg(model,result):''},token);}catch(e){paint({error:e.message},token);}};
+   try{const instance=new Worker('/src/diagram.mjs',{type:'module'});worker=instance;instance.onmessage=({data})=>{instance.terminate();if(worker===instance)worker=null;paint(data,token);};instance.onerror=()=>{instance.terminate();if(worker===instance)worker=null;if(token===epoch)fallback();};instance.postMessage({model});}catch{fallback();}
+  },delay);
+ }
+ function paint(data,token){
+  if(token!==epoch||!canvas.isConnected)return;
+  pending=false;canvas.setAttribute('aria-busy','false');err.textContent='';canvas.replaceChildren();findings.replaceChildren();currentSvg=null;
   try{
-   result=layoutDiagram(s.model,{draft:true});
-   if(result.layout){svg=renderSvg(s.model,result);const parsed=new DOMParser().parseFromString(svg,'image/svg+xml');if(parsed.querySelector('parsererror'))throw Error('Diagram export blocked by validation errors.');currentSvg=document.importNode(parsed.documentElement,true);canvas.append(currentSvg);setZoom();
+   if(data.error)throw Error(data.error);result=data.result;
+   if(result.layout){svg=data.svg;const parsed=new DOMParser().parseFromString(svg,'image/svg+xml');if(parsed.querySelector('parsererror'))throw Error('Diagram export blocked by validation errors.');currentSvg=document.importNode(parsed.documentElement,true);canvas.append(currentSvg);setZoom();
     // Browser font measurement in SVG user units. Do not rely on character count alone.
     const nodes=new Map(result.layout.nodes.map(n=>[n.id,n]));for(const text of currentSvg.querySelectorAll('text')){
       const b=text.getBBox(),id=text.getAttribute('data-node'),n=nodes.get(id);
@@ -102,18 +115,19 @@ export function diagramView(w,ui){
     for(const n of result.layout.nodes){
      const hit=document.createElementNS(ns,'rect');for(const [k,v] of Object.entries({x:n.x,y:n.y,width:n.w,height:n.h,rx:4,fill:'transparent',stroke:n.id===s.nodeId?'#2563eb':'transparent','stroke-width':2,tabindex:0,role:'button','aria-label':n.label}))hit.setAttribute(k,String(v));
      hit.setAttribute('data-hit-id',n.id);hit.classList.add('diagram-hit');currentSvg.append(hit);
-     const activate=()=>{if(s.connect){connectNode(n.id);return;}s.nodeId=n.id;s.edgeId='';rebuild();for(const h of currentSvg.querySelectorAll('.diagram-hit'))h.setAttribute('stroke',h===hit?'#2563eb':'transparent');};
+     const activate=()=>{if(pending)return;if(s.connect){connectNode(n.id);return;}s.nodeId=n.id;s.edgeId='';rebuild();for(const h of currentSvg.querySelectorAll('.diagram-hit'))h.setAttribute('stroke',h===hit?'#2563eb':'transparent');};
      hit.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
      hit.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();hit.setPointerCapture(e.pointerId);const x=e.clientX,y=e.clientY;
-      hit.addEventListener('pointerup',end=>{const dx=(end.clientX-x)/s.zoom,dy=(end.clientY-y)/s.zoom;
-       if(s.connect||s.model.kind==='sequence'||Math.abs(dx)+Math.abs(dy)<5){activate();return;}
+      const move=ev=>{if(s.connect||s.model.kind==='sequence')return;hit.setAttribute('transform','translate('+((ev.clientX-x)/s.zoom)+' '+((ev.clientY-y)/s.zoom)+')');};hit.addEventListener('pointermove',move);hit.addEventListener('pointercancel',()=>{hit.removeEventListener('pointermove',move);hit.removeAttribute('transform');},{once:true});
+      hit.addEventListener('pointerup',end=>{hit.removeEventListener('pointermove',move);hit.removeAttribute('transform');const dx=(end.clientX-x)/s.zoom,dy=(end.clientY-y)/s.zoom;
+       if(pending)return;if(s.connect||s.model.kind==='sequence'||Math.abs(dx)+Math.abs(dy)<5){activate();return;}
        const modelNode=s.model.nodes.find(q=>q.id===n.id);if(!modelNode)return;remember(s);modelNode.position={x:Math.max(10,Math.min(20000,Math.round(n.x+dx))),y:Math.max(100,Math.min(20000,Math.round(n.y+dy)))};s.nodeId=n.id;mark();
       },{once:true});
      });
     }
     metrics.textContent=t('Node count')+': '+result.layout.nodes.length+' · '+t('Connections')+': '+result.layout.edges.length+' · '+t('Crossings')+': '+result.layout.crossings+' · '+result.layout.width+' × '+result.layout.height;
    }else metrics.textContent='';
-   reviewTitle.textContent=tr('Diagram checks','Kiểm tra sơ đồ')+' · '+result.findings.filter(f=>f.level==='error').length+' '+tr('errors','lỗi');review.open=result.findings.some(f=>f.level==='error');
+   reviewTitle.textContent=tr('Diagram checks','Kiểm tra sơ đồ')+' · '+result.findings.filter(f=>f.level==='error').length+' '+tr('errors','lỗi');review.open=false;
    for(const f of result.findings){const p=$('p',f.code+' · '+t(f.level)+' — '+t(f.message));p.className=f.level;findings.append(p);}
    if(!result.findings.length)findings.append($('p',t('No findings.')));
    svgButton.disabled=pngButton.disabled=save.disabled=blocked();xmlButton.disabled=blocked()||s.model.kind!=='bpmn';remove.disabled=!s.id;
@@ -158,7 +172,7 @@ export function diagramView(w,ui){
   if(!m.nodes.some(n=>n.id===s.nodeId))picker.value='';
   const form=$('div');form.className='diagram-form';d.append(picker,form);
   function nodeForm(){
-   form.replaceChildren();const n=m.nodes.find(n=>n.id===picker.value),type=list(types[m.kind].map(([v,l])=>[v,t(l)]),n?.type??types[m.kind][0][0]),label=input(n?.label??'');label.maxLength=160;label.className='node-label-input';
+   form.replaceChildren();const selected=m.nodes.find(n=>n.id===picker.value);if(!selected){form.append($('p',tr('Select a shape on the canvas to edit it.','Bấm một hình trên bản vẽ để sửa.')));return;}const n=selected,type=list(types[m.kind].map(([v,l])=>[v,t(l)]),n?.type??types[m.kind][0][0]),label=input(n?.label??'');label.maxLength=160;label.className='node-label-input';let renaming=false;label.addEventListener('input',()=>{const value=label.value.trim();if(!value||value===n.label)return;if(!renaming){remember(s);renaming=true;}n.label=value;mark(false);});label.addEventListener('blur',()=>{renaming=false;if(!label.value.trim())label.value=n.label;const option=[...picker.options].find(o=>o.value===n.id);if(option)option.textContent=n.label;});
    const row=input(n?.row??'','number');row.min=0;row.max=59;const lane=list((m.lanes??[]).map(l=>[l.id,l.label]),n?.lane),side=list([['left',t('Left')],['right',t('Right')]],n?.side??'left'),ref=input(n?.ref??'');ref.maxLength=64;
    form.append(field('Node label',label),field('Node type',type));const advanced=$('details');advanced.append($('summary',tr('Advanced positioning','Vị trí nâng cao')),field('Row (optional)',row),field('Reference',ref));if(['bpmn','activity'].includes(m.kind))form.append(field('Lane',lane));else if(m.kind==='uml'&&(!n||n.type==='actor'))form.append(field('Actor side',side));
    let attrRows=[];
@@ -175,7 +189,7 @@ export function diagramView(w,ui){
    const cards=['1','0..1','0..*','1..*'].map(v=>[v,v]),fromCard=list(cards,old?.fromCard??'1'),toCard=list(cards,old?.toCard??'0..*');if(m.kind==='erd')ef.append(field('From cardinality',fromCard),field('To cardinality',toCard));
    ef.append(field('From',from),field('To',to),field('Relationship',type),field('Connection label',label),button(old?'Edit':'Add connection',()=>{const r={id:old?.id??nextId(m.edges,'edge'),from:from.value,to:to.value,type:type.value,...(label.value.trim()?{label:label.value.trim()}: {})};if(m.kind==='erd'){r.fromCard=fromCard.value;r.toCard=toCard.value;}if(!old&&m.edges.length>=120){err.textContent=tr('Connection limit reached.','Đã đạt giới hạn đường nối.');return;}if(r.from===r.to||!r.from||!r.to){err.textContent=tr('Choose two different shapes.','Chọn hai đối tượng khác nhau.');return;}remember(s);if(old)m.edges=m.edges.map(x=>x.id===old.id?r:x);else m.edges.push(r);s.edgeId=r.id;mark();}));if(old)ef.append(button('Remove',()=>{remember(s);m.edges=m.edges.filter(x=>x.id!==old.id);s.edgeId='';mark();}));}
   ep.addEventListener('change',()=>{s.edgeId=ep.value;edgeForm();});edgeForm();
-  const raw=section('Model JSON');raw.open=false;const source=$('textarea');source.value=JSON.stringify(m,null,2);source.setAttribute('aria-label',t('Model JSON'));raw.append(source,button('Update preview',()=>{try{const parsed=JSON.parse(source.value);if(!parsed||validateDiagram(parsed).some(f=>f.level==='error'))throw Error('Model JSON is invalid.');remember(s);s.model=parsed;title.value=parsed.title??'';mark();}catch(e){err.textContent=t(e.message);}}));
+  const raw=section('Model JSON',false);const source=$('textarea');source.value='';raw.addEventListener('toggle',()=>{if(raw.open)source.value=JSON.stringify(s.model,null,2);});source.setAttribute('aria-label',t('Model JSON'));raw.append(source,button('Update preview',()=>{try{const parsed=JSON.parse(source.value);if(!parsed||validateDiagram(parsed).some(f=>f.level==='error'))throw Error('Model JSON is invalid.');remember(s);s.model=parsed;title.value=parsed.title??'';mark();}catch(e){err.textContent=t(e.message);}}));
  }
  rebuild();historyButtons();render();
 }
